@@ -16,7 +16,7 @@ A fully functional REST API and HTTP server for Magento using Go, Echo, and GORM
 ## Directory Structure
 ```
 GO/
-  main.go
+  magento.go
   api/
     product/
       product_api.go
@@ -91,7 +91,7 @@ go mod tidy
 
 ## Run the API
 ```
-go run main.go
+go run magento.go
 ```
 
 ## Endpoints (all require Basic Auth)
@@ -165,7 +165,7 @@ Use HTTP Basic Auth with `API_USER` and `API_PASS`.
    - Use Echo's routing and middleware as described in the [Echo Routing Docs](https://echo.labstack.com/docs/routing).
 
 3. **Register Routes**
-   - In `GO/main.go`, import your new API handler and register its routes with the Echo instance.
+   - In `GO/magento.go`, import your new API handler and register its routes with the Echo instance.
 
 4. **Test Your Endpoint**
    - Use tools like curl or Postman to test your new API endpoint.
