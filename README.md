@@ -1,6 +1,9 @@
 # Magento Go API
 
-A fully functional REST API for Magento tables using Go, Echo, and GORM.
+A fully functional REST API and HTTP server for Magento using Go, Echo, and GORM.
+
+![image](https://github.com/user-attachments/assets/eaacc9e0-e497-4d3c-a4d9-faeadc7fd6e5)
+
 
 ## Features
 - Echo web server with RESTful routing
