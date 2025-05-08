@@ -1,0 +1,73 @@
+# .cursor Rules for Go Magento API Extension
+
+## 1. GORM Model Generation for Magento Tables
+- Use the following command to request a GORM model:
+  ```
+  @cursor please generate GORM model for Magento 2 table [table_name] with relationships and examples
+  ```
+- Always provide the full table schema using this SQL:
+  ```sql
+  SELECT GROUP_CONCAT(
+      CONCAT(
+          'Table: ', table_name, '\n',
+          '```sql\n',
+          CREATE_TABLE, '\n',
+          '```\n'
+      ) SEPARATOR '\n'
+  ) as table_info
+  FROM (
+      SELECT 
+          table_name,
+          GROUP_CONCAT(
+              CONCAT(column_name, ' ', column_type, 
+                     IF(is_nullable = 'NO', ' NOT NULL', ''),
+                     IF(column_default IS NOT NULL, CONCAT(' DEFAULT ', column_default), ''),
+                     IF(extra != '', CONCAT(' ', extra), '')
+              ) SEPARATOR ',\n'
+          ) as CREATE_TABLE
+      FROM information_schema.columns 
+      WHERE table_schema = DATABASE()
+      AND table_name IN (
+          -- List of relevant table names should be provided here
+      )
+      GROUP BY table_name
+  ) AS table_structures;
+  ```
+- Place each model in its own file under `GO/model/entity/`.
+- Always include relationships, the `TableName()` method, and CRUD usage examples as comments.
+- **Do NOT import `gorm.io/gorm` in entity model files unless you are embedding `gorm.Model` or using GORM-specific types.**
+
+## 2. Adding New API Endpoints with Echo
+- Create a new handler file in `GO/api/` (e.g., `product_api.go`).
+- Use Echo's routing and middleware as shown in `sales_order_grid_api.go`.
+- Group endpoints and apply middleware (e.g., BasicAuth) using Echo's `Group` feature.
+- Register your new routes in `GO/main.go`.
+- Follow Echo's best practices for context usage, error handling, and modularity.
+
+## 3. Best Practices
+- **GORM:**
+  - Use meaningful struct and field names.
+  - Document all relationships.
+  - Include table indexes and validation tags if needed.
+  - Follow Go naming conventions.
+  - Include usage examples in model comments.
+  - **Do NOT import `gorm.io/gorm` unless you use GORM-specific types.**
+- **Echo:**
+  - Use groups for logical API organization and middleware.
+  - Use context (`c echo.Context`) for all request/response handling.
+  - Add middleware for logging, recovery, CORS, etc., as needed.
+  - See the [Echo Cookbook](https://echo.labstack.com/docs/cookbook) for advanced patterns.
+
+## 4. References
+- [Echo Documentation](https://echo.labstack.com/docs)
+- [Echo Routing](https://echo.labstack.com/docs/routing)
+- [GORM Documentation](https://gorm.io/)
+- [database.mdc rules](see this .cursor file or ask the AI)
+
+---
+
+**To extend the app:**
+1. Generate a GORM model for your Magento table (see above).
+2. Add a new API handler in `GO/api/` using Echo.
+3. Register the handler in `GO/main.go`.
+4. Test your endpoint with HTTP Basic Auth. 
