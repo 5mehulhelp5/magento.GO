@@ -11,6 +11,29 @@
         <div class="mb-6 text-gray-600">
             Category ID: {{.Category.EntityID}}
         </div>
+        <div class="flex w-full justify-between items-center">
+            <button type="button" class="flex items-center px-3 py-2 mr-2 bg-gray-100 border border-gray-300 rounded hover:bg-blue-50 text-gray-700 font-semibold">
+                <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 mr-1" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 4a1 1 0 011-1h16a1 1 0 011 1v2a1 1 0 01-.293.707l-6.414 6.414A1 1 0 0013 13.414V19a1 1 0 01-1.447.894l-2-1A1 1 0 019 18v-4.586a1 1 0 00-.293-.707L2.293 6.707A1 1 0 012 6V4z" />
+                </svg>
+                Filters
+            </button>
+            <div class="flex-1"></div>
+            <form method="get" class="flex items-center gap-1 mb-1 w-auto ml-auto" id="sort-order-form">
+                <input type="hidden" name="p" value="1">
+                <input type="hidden" name="limit" value="20">
+                <label for="sort" class="text-gray-700">Sort by:</label>
+                <select id="sort" name="sort" class="border rounded px-2 py-1">
+                    <option value="name">Name</option>
+                    <option value="price">Price</option>
+                    <option value="sku">SKU</option>
+                </select>
+                <input type="hidden" name="order" id="order-input" value="asc">
+                <button type="button" id="toggle-order-btn" class="ml-1 px-2 py-1 rounded border bg-white text-gray-700 border-gray-300 hover:bg-blue-50 font-bold">
+                    <span id="order-label">AZ</span>
+                </button>
+            </form>
+        </div>
         {{if .Products}}
             <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
                 {{range $i, $prod := .Products}}
@@ -38,6 +61,42 @@
         {{end}}
     </main>
     {{template "parts/footer.html" .}}
+    <script>
+    document.addEventListener('DOMContentLoaded', function() {
+        const btn = document.getElementById('toggle-order-btn');
+        const label = document.getElementById('order-label');
+        const sortSelect = document.getElementById('sort');
+        const orderInput = document.getElementById('order-input');
+
+        // Helper to get current param from URL
+        function getParam(name, fallback) {
+            const params = new URLSearchParams(window.location.search);
+            return params.get(name) || fallback;
+        }
+
+        // Set initial values from URL
+        const currentOrder = getParam('order', 'asc');
+        const currentSort = getParam('sort', 'name');
+        orderInput.value = currentOrder;
+        sortSelect.value = currentSort;
+        label.textContent = currentOrder === 'asc' ? 'AZ' : 'ZA';
+
+        // Toggle order and reload with new param
+        btn.addEventListener('click', function() {
+            const newOrder = orderInput.value === 'asc' ? 'desc' : 'asc';
+            const url = new URL(window.location.href);
+            url.searchParams.set('order', newOrder);
+            window.location.href = url.toString();
+        });
+
+        // Change sort and reload with new param
+        sortSelect.addEventListener('change', function() {
+            const url = new URL(window.location.href);
+            url.searchParams.set('sort', sortSelect.value);
+            window.location.href = url.toString();
+        });
+    });
+    </script>
 </body>
 </html>
 {{end}}

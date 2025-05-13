@@ -46,9 +46,14 @@
                 <span class="ml-4">Qty: {{.qty}}</span>
             {{end}}
         </div>
-        <button type="button" data-product-id="{{.Product.entity_id}}" class="mt-3 px-6 py-3 text-lg bg-blue-600 text-white rounded hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-400 focus:ring-offset-2">
-            Add to Cart
-        </button>
+        <div class="flex items-center">
+            <button type="button" class="px-2 py-1 bg-gray-200 rounded-l text-lg font-bold border border-r-0" onclick="var q=document.getElementById('qty-input-{{.Product.entity_id}}');q.value=Math.max(1,parseInt(q.value||'1',10)-1)">-</button>
+            <input id="qty-input-{{.Product.entity_id}}" name="qty" type="number" min="1" value="1" class="w-16 text-center border-t border-b border-gray-300 py-1" style="border-left:0;border-right:0;" />
+            <button type="button" class="px-2 py-1 bg-gray-200 rounded-r text-lg font-bold border border-l-0" onclick="var q=document.getElementById('qty-input-{{.Product.entity_id}}');q.value=parseInt(q.value||'1',10)+1">+</button>
+            <button type="button" data-product-id="{{.Product.entity_id}}" class="px-6 py-3 text-lg bg-blue-600 text-white rounded hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-400 focus:ring-offset-2 ml-2">
+                Add to Cart
+            </button>
+        </div>
         <div class="mb-4">
             <strong>Description:</strong>
             <div class="prose max-w-none" id="desc"></div>
