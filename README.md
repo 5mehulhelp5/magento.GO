@@ -361,6 +361,21 @@ g.GET("", func(c echo.Context) error {
 - [GORM Preload Documentation](https://gorm.io/docs/preload.html)
 - [Echo Grouping and Middleware](https://echo.labstack.com/docs/guide#grouping-routes)
 
+## Local Go Cache Database for Main Entities
+
+All main entities (such as categories, products, attributes, etc.) must be stored in a local Go cache database. This cache acts as a persistent layer, ensuring that the application can continue to operate efficiently and reliably, even if the primary data source (such as a remote database or API) is temporarily unavailable.
+
+### Why Use a Local Cache?
+- **Performance:** Reduces latency by serving frequently accessed data from memory or local storage.
+- **Reliability:** Allows the application to function even during outages or slowdowns of the main data source.
+- **Persistence:** Ensures that critical data is not lost and can be quickly restored on restart.
+
+### Implementation Notes
+- The cache should be updated whenever entities are created, updated, or deleted.
+- On application startup, the cache should be loaded from persistent storage if available.
+- The cache can be implemented using Go's built-in data structures, with optional serialization to disk for persistence.
+
+
 ## GORM SQL Query Logging
 
 You can control GORM SQL query logging using the `GORM_LOG` environment variable:
