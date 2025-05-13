@@ -91,7 +91,7 @@ go mod tidy
 
 ## Run the API
 ```
-go run main.go
+go run magento.go
 ```
 
 ## Endpoints (all require Basic Auth)
