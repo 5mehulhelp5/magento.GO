@@ -6,11 +6,14 @@ import (
 	"os"
 	"strings"
 	"sync"
+	"time"
 )
 
 // Cache is a simple thread-safe key-value store using sync.Map.
 type Cache struct {
 	m sync.Map
+	// tagIndex maps tag string to a set of keys (as map[interface{}]struct{})
+	tagIndex sync.Map // map[string]map[interface{}]struct{}
 }
 
 var (
@@ -30,18 +33,31 @@ func NewCache() *Cache {
 	return &Cache{}
 }
 
-// Set stores a value for a key.
-func (c *Cache) Set(key, value interface{}) {
+// cacheItem holds a value and its expiration time.
+type cacheItem struct {
+	Value     interface{}
+	ExpiresAt int64 // Unix timestamp in nanoseconds; 0 means no expiration
+}
+
+// Set stores a value for a key with an optional TTL (in seconds) and optional tags (as a string slice). If ttl is 0, the value does not expire. Tags can be provided as a []string.
+func (c *Cache) Set(key, value interface{}, ttl int64, tags []string) {
 	var cache *Cache
 	if instance != nil {
 		cache = instance
 	} else {
 		cache = GetInstance()
 	}
-	cache.m.Store(key, value)
+	var expiresAt int64
+	if ttl > 0 {
+		expiresAt = time.Now().Add(time.Duration(ttl) * time.Second).UnixNano()
+	}
+	cache.m.Store(key, cacheItem{Value: value, ExpiresAt: expiresAt})
+	if len(tags) > 0 {
+		cache.TagKey(key, tags)
+	}
 }
 
-// Get retrieves a value for a key. Returns (value, true) if found, (nil, false) otherwise.
+// Get retrieves a value for a key. Returns (value, true) if found and not expired, (nil, false) otherwise.
 func (c *Cache) Get(key interface{}) (interface{}, bool) {
 	var cache *Cache
 	if instance != nil {
@@ -49,7 +65,19 @@ func (c *Cache) Get(key interface{}) (interface{}, bool) {
 	} else {
 		cache = GetInstance()
 	}
-	return cache.m.Load(key)
+	v, ok := cache.m.Load(key)
+	if !ok {
+		return nil, false
+	}
+	if item, isItem := v.(cacheItem); isItem {
+		if item.ExpiresAt > 0 && time.Now().UnixNano() > item.ExpiresAt {
+			cache.m.Delete(key)
+			return nil, false
+		}
+		return item.Value, true
+	}
+	// Fallback for legacy values (no TTL)
+	return v, true
 }
 
 // Delete removes a key from the cache.
@@ -63,6 +91,19 @@ func (c *Cache) Delete(key interface{}) {
 	cache.m.Delete(key)
 }
 
+// DeleteMany removes multiple keys from the cache.
+func (c *Cache) DeleteMany(keys ...interface{}) {
+	var cache *Cache
+	if instance != nil {
+		cache = instance
+	} else {
+		cache = GetInstance()
+	}
+	for _, key := range keys {
+		cache.m.Delete(key)
+	}
+}
+
 func makeCompositeKey(keys ...interface{}) string {
 	parts := make([]string, len(keys))
 	for i, k := range keys {
@@ -71,16 +112,12 @@ func makeCompositeKey(keys ...interface{}) string {
 	return strings.Join(parts, "|")
 }
 
-func (c *Cache) SetN(keysAndValue ...interface{}) {
-	if len(keysAndValue) < 2 {
-		// Not enough arguments: need at least one key and a value
-		return
-	}
-	value := keysAndValue[len(keysAndValue)-1]
-	keys := keysAndValue[:len(keysAndValue)-1]
-	c.Set(makeCompositeKey(keys...), value)
+// SetN stores a value for a composite key with an optional TTL (in seconds) and optional tags (as a string slice).
+func (c *Cache) SetN(keys []interface{}, value interface{}, ttl int64, tags []string) {
+	c.Set(makeCompositeKey(keys...), value, ttl, tags)
 }
 
+// GetN retrieves a value for a composite key. Returns (value, true) if found and not expired, (nil, false) otherwise.
 func (c *Cache) GetN(keys ...interface{}) (interface{}, bool) {
 	return c.Get(makeCompositeKey(keys...))
 }
@@ -169,11 +206,62 @@ func (c *Cache) IterateFilter(filter func(key, value interface{}) bool) []interf
 	return results
 }
 
-/*
-Usage Example:
+// TagKey assigns one or more tags (as a string slice) to a cache key.
+func (c *Cache) TagKey(key interface{}, tags []string) {
+	for _, tag := range tags {
+		val, _ := c.tagIndex.LoadOrStore(tag, &sync.Map{})
+		km := val.(*sync.Map)
+		km.Store(key, struct{}{})
+	}
+}
 
-cache := cache.NewCache()
-cache.Set("foo", 123)
-v, ok := cache.Get("foo") // v == 123, ok == true
-cache.Delete("foo")
+// UntagKey removes one or more tags (as a string slice) from a cache key.
+func (c *Cache) UntagKey(key interface{}, tags []string) {
+	for _, tag := range tags {
+		if val, ok := c.tagIndex.Load(tag); ok {
+			km := val.(*sync.Map)
+			km.Delete(key)
+		}
+	}
+}
+
+// GetKeysByTag returns a slice of all keys assigned to a tag.
+func (c *Cache) GetKeysByTag(tag string) []interface{} {
+	var keys []interface{}
+	if val, ok := c.tagIndex.Load(tag); ok {
+		km := val.(*sync.Map)
+		km.Range(func(key, _ interface{}) bool {
+			keys = append(keys, key)
+			return true
+		})
+	}
+	return keys
+}
+
+// DeleteByTag deletes all cache entries assigned to a tag.
+func (c *Cache) DeleteByTag(tag string) {
+	if val, ok := c.tagIndex.Load(tag); ok {
+		km := val.(*sync.Map)
+		km.Range(func(key, _ interface{}) bool {
+			c.Delete(key)
+			km.Delete(key)
+			return true
+		})
+		c.tagIndex.Delete(tag)
+	}
+}
+
+/*
+Updated Usage Example:
+
+cache := cache.GetInstance()
+cache.Set("foo", 123, 0, nil) // no expiration, no tags
+cache.Set("bar", 456, 10, nil) // expires in 10s, no tags
+cache.Set("baz", 789, 0, []string{"user", "session"}) // no expiration, tags: user, session
+cache.Set("qux", 999, 5, []string{"user"}) // expires in 5s, tag: user
+
+// For composite keys:
+cache.SetN([]interface{}{ "a", "b" }, "val", 0, nil) // no expiration, no tags
+cache.SetN([]interface{}{ "a", "b" }, "val", 5, nil) // expires in 5s, no tags
+cache.SetN([]interface{}{ "a", "b" }, "val", 0, []string{"tag1", "tag2"}) // no expiration, tags: tag1, tag2
 */
