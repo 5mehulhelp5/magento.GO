@@ -228,6 +228,7 @@ func RegisterProductHTMLRoutes(e *echo.Echo, db *gorm.DB) {
 
 		return c.Render(http.StatusOK, "products.html", map[string]interface{}{
 			"Products": products,
+			"Title": "Product Page - " + products[0]["name"].(string) + " - " + products[0]["sku"].(string) + " - Magento.GO",
 			"CriticalCSS": template.CSS(criticalCSS),
 			"MediaUrl": config.AppConfig.MediaUrl,
 			"CategoryTreeHTML": template.HTML(categoryTreeHTML),

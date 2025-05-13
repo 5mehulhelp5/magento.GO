@@ -1,0 +1,11 @@
+{{define "parts/head.html"}}
+<head>
+    <title>{{.Title}}</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    {{if and .CriticalCSS (ne .CriticalCSS "")}}
+        <style type="text/css">{{.CriticalCSS}}</style>
+    {{else}}
+        <link href="/static/tailwind.min.css" rel="stylesheet">
+    {{end}}
+</head>
+{{end}}

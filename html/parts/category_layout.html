@@ -1,15 +1,7 @@
 {{define "parts/category_layout.html"}}
 <!DOCTYPE html>
 <html>
-<head>
-    <title>{{with index .Attributes "name"}}{{if .value}}{{.value}}{{else}}{{$.Category.EntityID}}{{end}}{{else}}{{.Category.EntityID}}{{end}} - Category</title>
-    <meta name="viewport" content="width=device-width, initial-scale=1">
-    {{if .CriticalCSS}}
-    <style>{{.CriticalCSS}}</style>
-    {{else}}
-    <link href="/static/tailwind.min.css" rel="stylesheet">
-    {{end}}
-</head>
+{{template "parts/head.html" .}}
 <body class="bg-gray-100">
     {{template "parts/header.html" .}}
     <main class="container mx-auto py-6" style="padding-top: 0px;">
@@ -27,7 +19,7 @@
                             <img
                                 src="/image/webp?src={{$.MediaUrl}}{{index $prod "image"}}&w=200&h=200&type=webp"
                                 alt="{{index $prod "name"}}"
-                                class="w-32 h-32 object-contain mb-2 rounded"
+                                class="w-32 h-32 object-contain mb-2 rounded mx-auto"
                                 {{if ge $i 2}}loading="lazy"{{end}}
                             >
                             <div class="text-lg font-semibold text-blue-700 hover:underline mb-1">{{index $prod "name"}}</div>

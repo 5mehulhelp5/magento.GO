@@ -12,6 +12,7 @@ import (
 	productRepo "magento.GO/model/repository/product"
 	"magento.GO/config"
 	"time"
+	"fmt"
 )
 
 type CategoryTemplate struct {
@@ -109,13 +110,24 @@ func RegisterCategoryHTMLRoutes(e *echo.Echo, db *gorm.DB) {
 				categoryTreeHTML = ""
 			}
 		}
-		criticalCSS, err := parts.GetCriticalCSS()
+		criticalCSS, err := parts.GetCriticalCSSCached()
 		if err != nil {
 			criticalCSS = ""
 		}
+		var title string
+		if nameMap, ok := flat["name"]; ok {
+			if val, ok := nameMap["Value"].(string); ok {
+				title = val
+			}
+		}
+		if title == "" {
+			title = fmt.Sprintf("%v", cat.EntityID) // fallback to ID if name is missing
+		}
+		title = "Category Page - " + title + " - Magento.GO"
 		return c.Render(http.StatusOK, "parts/category_layout.html", map[string]interface{}{
 			"Category": cat,
 			"Attributes": flat,
+			"Title": title,
 			"Products": products,
 			"CriticalCSS": template.CSS(criticalCSS),
 			"CategoryTreeHTML": template.HTML(categoryTreeHTML),

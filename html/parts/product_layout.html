@@ -1,18 +1,7 @@
 {{define "parts/product_layout.html"}}
 <!DOCTYPE html>
 <html lang="en">
-<head>
-    <title>{{block "title" .}}Product Page{{end}}</title>
-    <meta name="viewport" content="width=device-width, initial-scale=1">
-    <meta name="description" content="{{if .MetaDescription}}{{.MetaDescription}}{{else}}Magento.Go product page. Browse our catalog of products and categories.{{end}}">
-    {{if .CriticalCSS}}
-    <style>
-    {{.CriticalCSS}}
-    </style>
-    {{else}}
-    <link href="/static/tailwind.min.css" rel="stylesheet">
-    {{end}}
-</head>
+{{template "parts/head.html" .}}
 <body class="bg-gray-100">
     {{template "parts/header.html" .}}
     <main class="container mx-auto py-6" style="padding-top: 0px;">

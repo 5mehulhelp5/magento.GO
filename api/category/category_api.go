@@ -18,7 +18,7 @@ type CategoryWithAttributes struct {
 // RegisterCategoryAPI registers the category API routes
 func RegisterCategoryAPI(g *echo.Group, db *gorm.DB) {
 	r := repo.GetCategoryRepository(db)
-	handler := func(c echo.Context) error {
+	fullHandler := func(c echo.Context) error {
 		storeID := uint16(0)
 		if sid := c.QueryParam("store_id"); sid != "" {
 			if sidParsed, err := strconv.ParseUint(sid, 10, 16); err == nil {
@@ -29,10 +29,13 @@ func RegisterCategoryAPI(g *echo.Group, db *gorm.DB) {
 		if err != nil {
 			return c.JSON(http.StatusInternalServerError, map[string]string{"error": err.Error()})
 		}
-		return c.JSON(http.StatusOK, categories)
+		return c.JSON(http.StatusOK, map[string]interface{}{
+			"categories": categories,
+			"total": len(categories),
+		})
 	}
-	g.GET("/categories", handler)
-	g.GET("/categories/full", handler) // Alias route
+	g.GET("/categories", fullHandler)
+	g.GET("/categories/full", fullHandler) // Alias route
 
 	// New: Get category by IDssss
 	g.GET("/category/:id", func(c echo.Context) error {

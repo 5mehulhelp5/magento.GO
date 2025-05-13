@@ -8,7 +8,6 @@ import (
 	"html/template"
 	"fmt"
 	"net/http"
-
 	"github.com/labstack/echo/v4"
 	"github.com/labstack/echo/v4/middleware"
 	"magento.GO/config"
@@ -18,6 +17,7 @@ import (
 	html "magento.GO/html"
 	"magento.GO/core/registry"
 	"magento.GO/core/cache"
+	corelog "magento.GO/core/log"
 )
 
 var GlobalRegistry = registry.NewRegistry()
@@ -66,12 +66,26 @@ func getAuthMiddleware() echo.MiddlewareFunc {
 	}
 }
 
+func CustomRecoverMiddleware(next echo.HandlerFunc) echo.HandlerFunc {
+	return func(c echo.Context) (err error) {
+		defer func() {
+			if r := recover(); r != nil {
+				corelog.Error("Panic recovered: %v", r)
+				err = echo.NewHTTPError(500, fmt.Sprintf("Internal Server Error: %v", r))
+			}
+		}()
+		return next(c)
+	}
+}
+
 func main() {
+	corelog.Init()
+	defer corelog.Close()
 	config.LoadEnv()
 	config.LoadAppConfig()
 	// Initialize Redis
 	config.InitRedis()
-	redisStatus := "Redis not configured or not reachable, caching disabled."
+	redisStatus := "Redis not configured or not reachable, Redis caching disabled."
 	if config.RedisClient != nil {
 		err := config.RedisClient.Ping(config.RedisCtx()).Err()
 		if err == nil {
@@ -81,22 +95,22 @@ func main() {
 			redisStatus = "Redis configured but not reachable, caching disabled."
 		}
 	}
-	log.Println(redisStatus)
+	corelog.Info(redisStatus)
 
 	db, err := config.NewDB()
 	if err != nil {
-		log.Fatalf("failed to connect to DB: %v", err)
+		corelog.Fatal("failed to connect to DB: %v", err)
 	}
 
 	// Check DB connection
 	sqldb, err := db.DB()
 	if err != nil {
-		log.Fatalf("failed to get DB instance: %v", err)
+		corelog.Fatal("failed to get DB instance: %v", err)
 	}
 	if err := sqldb.Ping(); err != nil {
-		log.Fatalf("database connection failed: %v", err)
+		corelog.Fatal("database connection failed: %v", err)
 	}
-	log.Println("Database connection successful.")
+	corelog.Info("Database connection successful.")
 
 	e := echo.New()
 	
@@ -151,7 +165,7 @@ func main() {
 	e.Renderer = t
 
 	for _, tmpl := range t.Templates.Templates() {
-		log.Println("Loaded template:", tmpl.Name())
+		log.Println("Loaded template: %s", tmpl.Name())
 	}
 
 	apiGroup := e.Group("/api")
@@ -179,6 +193,17 @@ func main() {
 	╚═══════════════════════════════════════════════════════════════════════════════════════╝
 	Magento GO(GoGento) server V1.0.1
 	`)
+
+	e.HTTPErrorHandler = func(err error, c echo.Context) {
+		code := 500
+		msg := err.Error()
+		if he, ok := err.(*echo.HTTPError); ok {
+			code = he.Code
+			msg = fmt.Sprintf("%v", he.Message)
+		}
+		corelog.Error("HTTP error: %d %s %s - %s", code, c.Request().Method, c.Request().URL.Path, msg)
+		c.String(code, msg)
+	}
 
 	port := os.Getenv("PORT")
 	if port == "" {

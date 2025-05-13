@@ -1,7 +1,7 @@
 {{define "parts/product_content.html"}}
 
 {{if .Product.Breadcrumbs}}
-<nav class="mb-4 text-sm" aria-label="Breadcrumb">
+<nav class="mb-4 text-sm" aria-label="Breadcrumb" style="margin-left: 10px;">
     <ol class="list-reset flex items-center space-x-2">
         {{range $i, $cat := .Product.Breadcrumbs}}
             {{if $i}}

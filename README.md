@@ -550,3 +550,139 @@ To use a minimal, production-ready Tailwind CSS build:
    ```
 
 For more details, see [Tailwind CSS documentation](https://tailwindcss.com/docs/installation) and [optimizing for production](https://tailwindcss.com/docs/optimizing-for-production).
+
+## Global Registry
+
+GoGento provides a thread-safe, application-wide global registry for sharing data across your application.
+
+**Usage:**
+```go
+import "magento.GO/core/registry"
+
+var GlobalRegistry = registry.NewRegistry()
+
+// Set a global value
+GlobalRegistry.SetGlobal("site_name", "MySite")
+
+// Get a global value
+site, ok := GlobalRegistry.GetGlobal("site_name")
+
+// Delete a global value
+GlobalRegistry.DeleteGlobal("site_name")
+```
+
+## Global Cache
+
+GoGento includes a thread-safe, application-wide global cache for storing frequently accessed data.
+
+**Usage:**
+```go
+import "magento.GO/core/cache"
+
+var GlobalCache = cache.GetInstance()
+
+// Set a value
+GlobalCache.Set("user_123_profile", userProfile)
+
+// Get a value
+val, ok := GlobalCache.Get("user_123_profile")
+
+// Delete a value
+GlobalCache.Delete("user_123_profile")
+```
+
+## Request-Isolated Registry
+
+For per-request data, use the request-isolated registry:
+
+```go
+reqReg := registry.NewRequestRegistry()
+reqReg.Set("user_id", 123)
+userID, ok := reqReg.Get("user_id")
+reqReg.Delete("user_id")
+```
+
+## Hello World Handler and Template Profiling
+
+GoGento includes a Hello World handler that demonstrates:
+- Using the request registry to track request start time
+- Passing execution time and template compilation time to the template
+
+
+## Singleton Pattern: Repository, Cache, and Registry
+
+GoGento uses the singleton pattern for its repositories, cache, and registry to ensure that only one instance exists and is shared across the application. This improves performance, ensures thread safety, and avoids redundant data loading.
+
+### Singleton Repository
+
+Repositories are created as singletons so that their in-memory caches (if any) are shared across all requests and handlers.
+
+**Example:**
+```go
+import "magento.GO/model/repository/product"
+
+// Get the singleton instance
+repo := product.GetProductRepository(db)
+```
+- The first call creates the repository; subsequent calls return the same instance.
+
+### Singleton Cache
+
+The global cache is a singleton, ensuring all parts of the application use the same cache instance.
+
+**Example:**
+```go
+import "magento.GO/core/cache"
+
+cache := cache.GetInstance()
+cache.Set("foo", 123)
+val, ok := cache.Get("foo")
+```
+
+### Singleton Registry
+
+The global registry is also a singleton, so global data is always shared.
+
+**Example:**
+```go
+import "magento.GO/core/registry"
+
+reg := registry.GetInstance() // if implemented, or use a global variable
+reg.SetGlobal("key", "value")
+```
+
+## Shared (Global) vs. Isolated (Per-Request) Registry and Cache
+
+- **Shared (Global) Registry/Cache:**
+  - Accessible from anywhere in the application.
+  - Data persists for the application's lifetime.
+  - Use for configuration, global flags, or data that should be available to all requests.
+  - **Example:**
+    ```go
+    GlobalRegistry.SetGlobal("site_mode", "production")
+    GlobalCache.Set("product_1", productData)
+    ```
+
+- **Isolated (Per-Request) Registry/Cache:**
+  - Created fresh for each request (e.g., via middleware).
+  - Data is only visible within the current request and is discarded after the request ends.
+  - Use for request-specific data, such as timing, user context, or temporary values.
+  - **Example:**
+    ```go
+    reqReg := registry.NewRequestRegistry()
+    reqReg.Set("user_id", 42)
+    userID, ok := reqReg.Get("user_id")
+    ```
+
+### Summary Table
+| Type                | Lifetime         | Scope         | Thread Safe | Usage Example                  |
+|---------------------|-----------------|--------------|-------------|-------------------------------|
+| Global Registry     | Application     | All requests | Yes         | GlobalRegistry.SetGlobal(...)  |
+| Request Registry    | Per-request     | One request  | N/A         | reqReg.Set(...)                |
+| Global Cache        | Application     | All requests | Yes         | GlobalCache.Set(...)           |
+| Request Cache       | Per-request     | One request  | N/A         | reqCache.Set(...) (if needed)  |
+| Singleton Repo      | Application     | All requests | Yes         | product.GetProductRepository() |
+
+---
+
+This pattern ensures high performance, data consistency, and safe concurrent access throughout your GoGento application.

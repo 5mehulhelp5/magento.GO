@@ -3,7 +3,21 @@ package parts
 import (
 	"os"
 	"log"
+	"sync"
 )
+
+var (
+	criticalCSS     string
+	criticalCSSErr  error
+	criticalCSSOnce sync.Once
+)
+
+func GetCriticalCSSCached() (string, error) {
+	criticalCSSOnce.Do(func() {
+		criticalCSS, criticalCSSErr = GetCriticalCSS()
+	})
+	return criticalCSS, criticalCSSErr
+}
 
 // GetCriticalCSS reads the critical CSS file and returns it as a string.
 func GetCriticalCSS() (string, error) {
