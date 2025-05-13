@@ -701,3 +701,56 @@ reg.SetGlobal("key", "value")
 ---
 
 This pattern ensures high performance, data consistency, and safe concurrent access throughout your GoGento application.
+
+## Running as a Daemon / Background Process
+
+### 1. Run in Background with nohup
+
+You can run the Go application in the background using `nohup` so it continues running after you log out:
+
+```sh
+nohup go run magento.go > output.log 2>&1 &
+```
+Or, if you have built a binary:
+```sh
+nohup ./magento > output.log 2>&1 &
+```
+- The process will keep running after you log out.
+- Output is written to `output.log`.
+
+### 2. Run as a systemd Service (Recommended for Production)
+
+1. **Build your binary:**
+   ```sh
+   go build -o magento
+   ```
+2. **Create a systemd service file** `/etc/systemd/system/magento.service`:
+   ```ini
+   [Unit]
+   Description=Magento Go API
+
+   [Service]
+   ExecStart=/var/www/html/react-luma/magento.go/magento
+   WorkingDirectory=/var/www/html/react-luma/magento.go
+   Restart=always
+   User=youruser
+   Environment=PORT=8080
+
+   [Install]
+   WantedBy=multi-user.target
+   ```
+   Replace `youruser` with the user you want to run the service as.
+
+3. **Enable and start the service:**
+   ```sh
+   sudo systemctl daemon-reload
+   sudo systemctl start magento
+   sudo systemctl enable magento
+   ```
+
+4. **Check status:**
+   ```sh
+   sudo systemctl status magento
+   ```
+
+---
