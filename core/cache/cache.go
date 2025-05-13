@@ -81,7 +81,7 @@ func (c *Cache) Get(key interface{}) (interface{}, bool) {
 }
 
 // GetOrDefault retrieves a value for a key. Returns the value if found, otherwise returns the default value.
-func (c *Config) GetOrDef(key, defaultValue interface{}) interface{} {
+func (c *Cache) GetOrDefault(key, defaultValue interface{}) interface{} {
 	v, ok := c.Get(key)
 	if ok {
 		return v
