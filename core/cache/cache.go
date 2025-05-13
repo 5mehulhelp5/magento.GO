@@ -80,6 +80,15 @@ func (c *Cache) Get(key interface{}) (interface{}, bool) {
 	return v, true
 }
 
+// GetOrDefault retrieves a value for a key. Returns the value if found, otherwise returns the default value.
+func (c *Config) GetOrDef(key, defaultValue interface{}) interface{} {
+	v, ok := c.Get(key)
+	if ok {
+		return v
+	}
+	return defaultValue
+}
+
 // Delete removes a key from the cache.
 func (c *Cache) Delete(key interface{}) {
 	var cache *Cache

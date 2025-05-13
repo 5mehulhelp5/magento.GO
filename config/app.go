@@ -22,11 +22,19 @@ type Config struct {
 func LoadAppConfig() {
 	once.Do(func() {
 		AppConfig = &Config{
-			AppName: os.Getenv("APP_NAME"),
-			Port:    os.Getenv("PORT"),
-			Env:     os.Getenv("APP_ENV"),
-			Debug:   os.Getenv("DEBUG") == "true",
-			MediaUrl: "https://react-luma.cnxt.link/media/catalog/product/",
+			AppName:  os.Getenv("APP_NAME"),
+			Port:     os.Getenv("PORT"),
+			Env:      os.Getenv("APP_ENV"),
+			Debug:    os.Getenv("DEBUG") == "true",
+			MediaUrl: GetEnv("MEDIA_URL", "http://localhost/media/"),
 		}
 	})
-} 
+}
+
+// GetEnvOrDefault returns the value of the environment variable key, or defaultVal if not set or empty.
+func GetEnv(key, defaultVal string) string {
+	if v := os.Getenv(key); v != "" {
+		return v
+	}
+	return defaultVal
+}
