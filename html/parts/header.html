@@ -1,10 +1,58 @@
 {{define "parts/header.html"}}
-<header class="bg-blue-600 text-white p-4 mb-6">
+<header class="bg-blue-600 text-white p-4 mb-6 relative" style="margin-bottom: 15px;">
     <div class="container mx-auto flex justify-between items-center">
-        <h1 class="text-2xl font-bold">My Store</h1>
-        <nav>
-            <!-- Add navigation links here if needed -->
-        </nav>
+        <div class="flex items-center">
+            <!-- Fake Hamburger Menu for Mobile -->
+            <button id="hamburgerBtn" class="flex flex-col justify-center items-center w-10 h-10 mr-2 focus:outline-none" aria-label="Open menu" onclick="document.getElementById('mobileDropdown').classList.toggle('hidden')">
+                <span class="block w-6 h-0.5 bg-white mb-1"></span>
+                <span class="block w-6 h-0.5 bg-white mb-1"></span>
+                <span class="block w-6 h-0.5 bg-white"></span>
+            </button>
+            <h1 class="text-2xl font-bold"><img style="width: 300px;height: 50px;" src="/static/images/MAgentoGO-logo.png" alt="Magento.Go" class="w-10 h-10"></h1>
+            <nav>
+                <!-- Add navigation links here if needed -->
+            </nav>
+        </div>
+        <a href="/cart" id="cart-icon" class="ml-4 hover:text-yellow-300 flex items-center" aria-label="Cart">
+            <svg class="w-6 h-6" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24" aria-hidden="true">
+                <circle cx="9" cy="21" r="1" />
+                <circle cx="20" cy="21" r="1" />
+                <path stroke-linecap="round" stroke-linejoin="round" d="M1 1h4l2.68 13.39a2 2 0 0 0 2 1.61h9.72a2 2 0 0 0 2-1.61L23 6H6" />
+            </svg>
+        </a>
+    </div>
+    <!-- Dynamic Dropdown for Mobile -->
+    <div id="mobileDropdown" class="md:hidden absolute left-0 right-0 top-full bg-white text-blue-600 shadow-lg hidden z-50">
+        <ul class="flex flex-col divide-y divide-blue-100">
+            {{.CategoryTreeHTML}}
+        </ul>
     </div>
 </header>
+{{end}}
+
+{{define "category_tree"}}
+    {{- range . }}
+        <li>
+            <a href="/category/{{.Category.EntityID}}" class="block px-6 py-3 hover:bg-blue-50">
+                {{with index .Attributes "name"}}
+                    {{if .value}}{{.value}}{{else}}{{$.Category.EntityID}}{{end}}
+                {{else}}
+                    {{$.Category.EntityID}}
+                {{end}}
+            </a>
+            {{if .Children}}
+                <ul class="ml-4 border-l border-blue-100">
+                    {{template "category_tree" .Children}}
+                </ul>
+            {{end}}
+        </li>
+    {{- end}}
+{{end}}
+
+{{define "attrValueOrID"}}
+    {{if .0}}
+        {{with index .0 "value"}}{{.}}{{else}}{{.1}}{{end}}
+    {{else}}
+        {{.1}}
+    {{end}}
 {{end}} 

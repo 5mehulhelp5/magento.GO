@@ -3,7 +3,7 @@ package product
 import (
 	"time"
 	"gorm.io/gorm"
-	entity "GO/model/entity"
+	entity "magento.GO/model/entity"
 )
 
 type ProductGallery struct {

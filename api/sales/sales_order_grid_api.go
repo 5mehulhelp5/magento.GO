@@ -11,8 +11,8 @@ import (
 	//"github.com/labstack/echo/v4/middleware"
 	"gorm.io/gorm"
 
-	"GO/model/entity/sales"
-	"GO/config"
+	"magento.GO/model/entity/sales"
+	"magento.GO/config"
 )
 
 // RegisterSalesOrderGridRoutes registers the routes for SalesOrderGrid CRUD operations with basic auth

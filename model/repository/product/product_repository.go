@@ -6,10 +6,10 @@
 package product
 
 import (
-	productEntity "GO/model/entity/product"
+	productEntity "magento.GO/model/entity/product"
 	"gorm.io/gorm"
 	"fmt"
-	entity "GO/model/entity"
+	entity "magento.GO/model/entity"
 	"sync"
 	"os"
 )
@@ -21,7 +21,19 @@ var (
 	flatProductsCacheOnce  sync.Once
 	flatProductsCacheLock  sync.RWMutex
 	cacheDisabled = os.Getenv("PRODUCT_FLAT_CACHE") == "off"
+
+	// Singleton for ProductRepository
+	productRepoInstance *ProductRepository
+	productRepoOnce sync.Once
 )
+
+// GetProductRepository returns the singleton instance of ProductRepository
+func GetProductRepository(db *gorm.DB) *ProductRepository {
+	productRepoOnce.Do(func() {
+		productRepoInstance = NewProductRepository(db)
+	})
+	return productRepoInstance
+}
 
 func getGlobalAttributeCodeMap(db *gorm.DB) map[uint16]string {
 	attributeCodeMapOnce.Do(func() {
@@ -87,6 +99,7 @@ func (r *ProductRepository) FetchWithAllAttributes(storeID ...uint16) ([]product
 
 func (r *ProductRepository) fetchFlatProducts(ids []uint, storeID uint16) (map[uint]map[string]interface{}, error) {
 	var products []productEntity.Product
+	fmt.Println("DEBUG: ids:", ids)
 	db := r.db.
 		Preload("Categories").
 		Preload("MediaGallery").

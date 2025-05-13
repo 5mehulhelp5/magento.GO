@@ -11,12 +11,12 @@ import (
 	//"github.com/labstack/echo/v4/middleware"
 	"gorm.io/gorm"
 
-	productRepository "GO/model/repository/product"
-	productService "GO/service/product"
+	productRepository "magento.GO/model/repository/product"
+	productService "magento.GO/service/product"
 )
 
 func RegisterProductRoutes(api *echo.Group, db *gorm.DB) {
-	repo := productRepository.NewProductRepository(db)
+	repo := productRepository.GetProductRepository(db)
 	service := productService.NewProductService(repo)
 	g := api.Group("/products")
 

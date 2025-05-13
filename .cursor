@@ -33,15 +33,15 @@
       GROUP BY table_name
   ) AS table_structures;
   ```
-- Place each model in its own file under `GO/model/entity/`.
+- Place each model in its own file under `magento.GO/model/entity/`.
 - Always include relationships, the `TableName()` method, and CRUD usage examples as comments.
 - **Do NOT import `gorm.io/gorm` in entity model files unless you are embedding `gorm.Model` or using GORM-specific types.**
 
 ## 2. Adding New API Endpoints with Echo
-- Create a new handler file in `GO/api/` (e.g., `product_api.go`).
+- Create a new handler file in `magento.GO/api/` (e.g., `product_api.go`).
 - Use Echo's routing and middleware as shown in `sales_order_grid_api.go`.
 - Group endpoints and apply middleware (e.g., BasicAuth) using Echo's `Group` feature.
-- Register your new routes in `GO/main.go`.
+- Register your new routes in `magento.GO/main.go`.
 - Follow Echo's best practices for context usage, error handling, and modularity.
 
 ## 3. Best Practices
@@ -68,6 +68,6 @@
 
 **To extend the app:**
 1. Generate a GORM model for your Magento table (see above).
-2. Add a new API handler in `GO/api/` using Echo.
-3. Register the handler in `GO/main.go`.
+2. Add a new API handler in `magento.GO/api/` using Echo.
+3. Register the handler in `magento.GO/main.go`.
 4. Test your endpoint with HTTP Basic Auth. 

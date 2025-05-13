@@ -1,8 +1,8 @@
 package product
 
 import (
-	productEntity "GO/model/entity/product"
-	productRepository "GO/model/repository/product"
+	productEntity "magento.GO/model/entity/product"
+	productRepository "magento.GO/model/repository/product"
 )
 
 type ProductInput struct {

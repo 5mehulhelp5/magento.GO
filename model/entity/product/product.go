@@ -2,7 +2,7 @@ package product
 
 import (
     "time"
-    "GO/model/entity/category"
+    "magento.GO/model/entity/category"
 )
 
 type Product struct {

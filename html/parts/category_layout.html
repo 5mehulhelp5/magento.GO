@@ -1,0 +1,77 @@
+{{define "parts/category_layout.html"}}
+<!DOCTYPE html>
+<html>
+<head>
+    <title>{{with index .Attributes "name"}}{{if .value}}{{.value}}{{else}}{{$.Category.EntityID}}{{end}}{{else}}{{.Category.EntityID}}{{end}} - Category</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    {{if .CriticalCSS}}
+    <style>{{.CriticalCSS}}</style>
+    {{else}}
+    <link href="/static/tailwind.min.css" rel="stylesheet">
+    {{end}}
+</head>
+<body class="bg-gray-100">
+    {{template "parts/header.html" .}}
+    <main class="container mx-auto py-6" style="padding-top: 0px;">
+        <h2 class="text-3xl font-bold mb-4">
+            {{with index .Attributes "name"}}{{if .value}}{{.value}}{{else}}{{$.Category.EntityID}}{{end}}{{else}}{{.Category.EntityID}}{{end}}
+        </h2>
+        <div class="mb-6 text-gray-600">
+            Category ID: {{.Category.EntityID}}
+        </div>
+        {{if .Products}}
+            <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
+                {{range $i, $prod := .Products}}
+                    <div class="bg-white rounded shadow p-4 flex flex-col items-center">
+                        <a href="/product/{{index $prod "entity_id"}}">
+                            <img
+                                src="/image/webp?src={{$.MediaUrl}}{{index $prod "image"}}&w=200&h=200&type=webp"
+                                alt="{{index $prod "name"}}"
+                                class="w-32 h-32 object-contain mb-2 rounded"
+                                {{if ge $i 2}}loading="lazy"{{end}}
+                            >
+                            <div class="text-lg font-semibold text-blue-700 hover:underline mb-1">{{index $prod "name"}}</div>
+                        </a>
+                        <div class="text-gray-500">SKU: {{index $prod "sku"}}</div>
+                        <div class="text-green-600 font-bold mt-2">${{index $prod "price"}}</div>
+                        <button type="button" data-product-id="{{index $prod "entity_id"}}" class="mt-3 px-6 py-3 text-lg bg-blue-600 text-white rounded hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-400 focus:ring-offset-2">
+                            Add to Cart
+                        </button>
+                    </div>
+                {{end}}
+            </div>
+            {{template "parts/pagination.html" .}}
+        {{else}}
+            <div class="text-gray-500">No products found in this category.</div>
+        {{end}}
+    </main>
+    {{template "parts/footer.html" .}}
+</body>
+</html>
+{{end}}
+
+{{define "parts/pagination.html"}}
+<div class="flex justify-center mt-8">
+    <nav class="inline-flex rounded-md shadow-sm" aria-label="Pagination">
+        {{ $catID := .Category.EntityID }}
+        {{ $limit := .Limit }}
+        {{if gt .Page 1}}
+            <a href="/category/{{$catID}}?p={{.PrevPage}}&limit={{$limit}}" class="px-3 py-1 border border-gray-300 bg-white text-blue-600 hover:bg-blue-50 rounded-l">Previous</a>
+        {{else}}
+            <span class="px-3 py-1 border border-gray-200 bg-gray-100 text-gray-400 rounded-l cursor-not-allowed">Previous</span>
+        {{end}}
+        {{range .PageNumbers}}
+            {{if eq $.Page .}}
+                <span class="px-3 py-1 border-t border-b border-gray-300 bg-blue-600 text-white">{{.}}</span>
+            {{else}}
+                <a href="/category/{{$catID}}?p={{.}}&limit={{$limit}}" class="px-3 py-1 border border-gray-300 bg-white text-blue-600 hover:bg-blue-50">{{.}}</a>
+            {{end}}
+        {{end}}
+        {{if lt .Page .TotalPages}}
+            <a href="/category/{{$catID}}?p={{.NextPage}}&limit={{$limit}}" class="px-3 py-1 border border-gray-300 bg-white text-blue-600 hover:bg-blue-50 rounded-r">Next</a>
+        {{else}}
+            <span class="px-3 py-1 border border-gray-200 bg-gray-100 text-gray-400 rounded-r cursor-not-allowed">Next</span>
+        {{end}}
+    </nav>
+</div>
+{{end}} 

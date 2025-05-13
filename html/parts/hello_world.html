@@ -1,0 +1,18 @@
+{{define "hello_world.html"}}
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Hello World</title>
+</head>
+<body>
+    <img src="/static/images/MAgentoGO-logo.png" alt="Logo" style="max-width:200px;display:block;margin-bottom:1em;">
+    <h1>{{.Message}}</h1>
+    {{if .ExecutionTime}}
+    <p>Execution time: {{.ExecutionTime}} ({{.ExecutionTimeMs}})</p>
+    {{end}}
+    <img src="/static/images/MagentoGO.png" alt="Magento Go" width="100%">
+    <p>Template compile time: {{.TemplateCompileTime}} ({{.TemplateCompileTimeMs}})</p>
+</body>
+</html>
+{{end}} 

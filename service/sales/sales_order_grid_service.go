@@ -1,8 +1,8 @@
 package sales
 
 import (
-	"GO/model/entity/sales"
-	"GO/model/repository/sales"
+	"magento.GO/model/entity/sales"
+	"magento.GO/model/repository/sales"
 )
 
 type SalesOrderGridService struct {

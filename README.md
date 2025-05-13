@@ -15,7 +15,7 @@ A fully functional REST API and HTTP server for Magento using Go, Echo, and GORM
 
 ## Directory Structure
 ```
-GO/
+magento.GO/
   main.go
   api/
     product/
@@ -157,15 +157,15 @@ Use HTTP Basic Auth with `API_USER` and `API_PASS`.
 
 1. **Generate GORM Model**
    - Use the database.mdc rules to generate a GORM model for your Magento table (see `.cursor` documentation or ask the AI: `@cursor please generate GORM model for Magento 2 table [table_name] with relationships and examples`).
-   - Place the model in `GO/model/entity/`.
+   - Place the model in `magento.GO/model/entity/`.
 
 2. **Create API Handler**
-   - Create a new file in `GO/api/` (e.g., `product_api.go`).
+   - Create a new file in `magento.GO/api/` (e.g., `product_api.go`).
    - Follow the structure in `sales_order_grid_api.go` for CRUD endpoints.
    - Use Echo's routing and middleware as described in the [Echo Routing Docs](https://echo.labstack.com/docs/routing).
 
 3. **Register Routes**
-   - In `GO/main.go`, import your new API handler and register its routes with the Echo instance.
+   - In `magento.GO/main.go`, import your new API handler and register its routes with the Echo instance.
 
 4. **Test Your Endpoint**
    - Use tools like curl or Postman to test your new API endpoint.
@@ -207,8 +207,8 @@ This project follows Go best practices by separating data access and business lo
 ### Example Usage
 ```go
 import (
-    "GO/model/repository"
-    "GO/service"
+    "magento.GO/model/repository"
+    "magento.GO/service"
 )
 
 repo := repository.NewSalesOrderGridRepository(db)
@@ -236,7 +236,7 @@ This project organizes models, repositories, and services by domain (e.g., produ
 
 ### Example Structure
 ```
-GO/
+magento.GO/
   model/
     entity/
       product/
@@ -267,8 +267,8 @@ When two packages have the same name (e.g., `product` for both entity and reposi
 
 ```go
 import (
-    prodentity "GO/model/entity/product"
-    productrepo "GO/model/repository/product"
+    prodentity "magento.GO/model/entity/product"
+    productrepo "magento.GO/model/repository/product"
 )
 
 // Usage:
@@ -289,7 +289,7 @@ This project demonstrates how to efficiently handle relationships (e.g., product
 
 **Product model references Category, StockItem, and ProductIndexPrices:**
 ```go
-import cat "GO/model/entity/category"
+import cat "magento.GO/model/entity/category"
 
 type Product struct {
     // ... other fields ...
@@ -520,3 +520,33 @@ The global cache in this API is designed to dramatically improve performance for
   ```
 
 > _This approach leverages Go's strengths in concurrency and memory management to provide a robust, high-performance caching layer for the API._
+
+## Tailwind CSS: Install & Compile Minimal Build
+
+To use a minimal, production-ready Tailwind CSS build:
+
+1. **Install Tailwind CSS (v3):**
+   ```sh
+   npm install -D tailwindcss@3
+   ```
+
+2. **Create an input CSS file:**
+   Create a file named `input.css` in your project root with:
+   ```css
+   @tailwind base;
+   @tailwind components;
+   @tailwind utilities;
+   ```
+
+3. **Build your CSS for production:**
+   ```sh
+  npx tailwindcss -i ./input.css -o ./assets/tailwind.min.css --minify --content './html/**/*.html'
+   ```
+   - This will generate a minimal CSS file containing only the classes used in your HTML templates.
+
+4. **Reference the output in your HTML:**
+   ```html
+   <link href="/static/tailwind.min.css" rel="stylesheet">
+   ```
+
+For more details, see [Tailwind CSS documentation](https://tailwindcss.com/docs/installation) and [optimizing for production](https://tailwindcss.com/docs/optimizing-for-production).

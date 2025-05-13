@@ -15,6 +15,9 @@ type Category struct {
     Level          int       `gorm:"column:level;not null;default:0"`
     ChildrenCount  int       `gorm:"column:children_count;not null"`
     Products       []CategoryProduct `gorm:"foreignKey:CategoryID;references:EntityID"`
+    Ints           []CategoryInt     `gorm:"foreignKey:EntityID;references:EntityID"`
+    Varchars       []CategoryVarchar `gorm:"foreignKey:EntityID;references:EntityID"`
+    Texts          []CategoryText    `gorm:"foreignKey:EntityID;references:EntityID"`
 }
 
 // TableName specifies the table name

@@ -1,0 +1,9 @@
+# Binaries for programs and plugins
+.env
+var/*
+*.log
+*.log.*
+*.log.*.*
+*.log.*.*.*
+*.log.*.*.*.*
+*.log.*.*.*.*.*

@@ -1,7 +1,7 @@
 package sales
 
 import (
-	salesEntity "GO/model/entity/sales"
+	salesEntity "magento.GO/model/entity/sales"
 	"gorm.io/gorm"
 )
 

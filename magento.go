@@ -6,15 +6,34 @@ import (
 	"time"
 	"strconv"
 	"html/template"
+	"fmt"
+	"net/http"
 
 	"github.com/labstack/echo/v4"
 	"github.com/labstack/echo/v4/middleware"
-
-	"GO/config"
-	salesApi "GO/api/sales"
-	productApi "GO/api/product"
-	html "GO/html"
+	"magento.GO/config"
+	salesApi "magento.GO/api/sales"
+	productApi "magento.GO/api/product"
+	categoryApi "magento.GO/api/category"
+	html "magento.GO/html"
+	"magento.GO/core/registry"
+	"magento.GO/core/cache"
 )
+
+var GlobalRegistry = registry.NewRegistry()
+var GlobalCache = cache.GetInstance()
+
+// Middleware to attach a request-isolated registry to each request
+func RegistryMiddleware(next echo.HandlerFunc) echo.HandlerFunc {
+	return func(c echo.Context) error {
+		reqReg := registry.NewRequestRegistry()
+		// Store the request start time in the request registry
+		reqReg.Set("request_start", time.Now())
+		// Attach to context
+		c.Set("RequestRegistry", reqReg)
+		return next(c)
+	}
+}
 
 func getAuthMiddleware() echo.MiddlewareFunc {
 	skipPaths := config.GetAuthSkipperPaths()
@@ -80,25 +99,54 @@ func main() {
 	log.Println("Database connection successful.")
 
 	e := echo.New()
+	
+	// Serve static files from the 'assets' directory at '/static/*'
+	e.Static("/static", "assets")
+
+	// Add timing middleware first
+	e.Use(func(next echo.HandlerFunc) echo.HandlerFunc {
+		return func(c echo.Context) error {
+			start := time.Now()
+			
+			// Wrap the response writer
+			w := &responseWriterWithTiming{
+				ResponseWriter: c.Response().Writer,
+				start:         start,
+			}
+			c.Response().Writer = w
+			
+			err := next(c)
+			
+			// If headers haven't been written yet, write them now
+			if !w.headerWritten {
+				duration := time.Since(start)
+				msWithPrecision := float64(duration.Microseconds()) / 1000.0 // Convert to ms with decimals
+				
+				w.Header().Set("X-Page-Generation-Time-ms", fmt.Sprintf("%.3f", msWithPrecision))
+				w.Header().Set("X-Page-Generation-Time-μs", strconv.FormatInt(duration.Microseconds(), 10))
+				w.Header().Set("X-Page-Generation-Time", duration.String())
+				w.Header().Set("Server-Timing", fmt.Sprintf("app;dur=%.3f;desc=\"Magento.GO Response Time\"", msWithPrecision))
+				w.headerWritten = true
+			}
+			
+			return err
+		}
+	})
+
+	// Other middleware after timing
 	e.Use(middleware.Logger())
 	e.Use(middleware.Recover())
 	e.Use(middleware.Gzip())
 	e.Use(middleware.Decompress())
 
-	e.Use(func(next echo.HandlerFunc) echo.HandlerFunc {
-		return func(c echo.Context) error {
-			start := time.Now()
-			err := next(c)
-			duration := time.Since(start).Milliseconds()
-			c.Response().Header().Set("X-Request-Duration-ms", strconv.FormatInt(duration, 10))
-			log.Printf("Request duration: %d ms", duration)
-			return err
-		}
-	})
+	// Attach the registry middleware
+	e.Use(RegistryMiddleware)
 
 	// Register the template renderer
 	t := &html.Template{
-		Templates: template.Must(template.ParseGlob("html/**/*.html")),
+		Templates: template.Must(template.New("").Funcs(template.FuncMap{
+			"dict": html.Dict,
+		}).ParseGlob("html/**/*.html")),
 	}
 	e.Renderer = t
 
@@ -111,7 +159,26 @@ func main() {
 
 	salesApi.RegisterSalesOrderGridRoutes(apiGroup, db)
 	productApi.RegisterProductRoutes(apiGroup, db)
+	categoryApi.RegisterCategoryAPI(apiGroup, db)
+
+	// Not Autorised HTML Routes
 	html.RegisterProductHTMLRoutes(e, db)
+	html.RegisterCategoryHTMLRoutes(e, db)
+	html.RegisterHelloWorldRoute(e)
+
+	fmt.Println(`
+	╔═══════════════════════════════════════════════════════════════════════════════════════╗
+	║                                                                                       ║
+	║ ███╗   ███╗ █████╗  ██████╗ ███████╗███╗   ██╗████████╗ ██████╗    ██████╗  ██████╗   ║
+	║ ████╗ ████║██╔══██╗██╔════╝ ██╔════╝████╗  ██║╚══██╔══╝██╔═══██╗   ██╔════╝ ██╔═══██╗ ║
+	║ ██╔████╔██║███████║██║  ███╗█████╗  ██╔██╗ ██║   ██║   ██║   ██║   ██║  ███╗██║   ██║ ║
+	║ ██║╚██╔╝██║██╔══██║██║   ██║██╔══╝  ██║╚██╗██║   ██║   ██║   ██║   ██║   ██║██║   ██║ ║
+	║ ██║ ╚═╝ ██║██║  ██║╚██████╔╝███████╗██║ ╚████║   ██║   ╚██████╔╝   ╚██████╔╝╚██████╔╝ ║
+	║ ╚═╝     ╚═╝╚═╝  ╚═╝ ╚═════╝ ╚══════╝╚═╝  ╚═══╝   ╚═╝    ╚═════╝  ░░ ╚═════╝  ╚═════╝  ║
+	║                                                                                       ║
+	╚═══════════════════════════════════════════════════════════════════════════════════════╝
+	Magento GO(GoGento) server V1.0.1
+	`)
 
 	port := os.Getenv("PORT")
 	if port == "" {
@@ -119,4 +186,30 @@ func main() {
 	}
 	log.Printf("Server running on :%s", port)
 	e.Logger.Fatal(e.Start(":" + port))
+
+}
+
+type responseWriterWithTiming struct {
+	http.ResponseWriter
+	start         time.Time
+	headerWritten bool
+}
+
+func (r *responseWriterWithTiming) WriteHeader(code int) {
+	if !r.headerWritten {
+		duration := time.Since(r.start)
+		msWithPrecision := float64(duration.Microseconds()) / 1000.0 // Convert to ms with decimals
+		
+		r.Header().Set("X-Page-Generation-Time-ms", fmt.Sprintf("%.3f", msWithPrecision))
+		r.Header().Set("Server-Timing", fmt.Sprintf("app;dur=%.3f;desc=\"Magento.GO Response Time\"", msWithPrecision))
+		r.headerWritten = true
+	}
+	r.ResponseWriter.WriteHeader(code)
+}
+
+func (r *responseWriterWithTiming) Write(b []byte) (int, error) {
+	if !r.headerWritten {
+		r.WriteHeader(http.StatusOK)
+	}
+	return r.ResponseWriter.Write(b)
 } 

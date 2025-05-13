@@ -2,7 +2,7 @@ package product
 
 import (
 	"time"
-	//entity "GO/model/entity"
+	//entity "magento.GO/model/entity"
 )
 
 type StockItem struct {

@@ -2,7 +2,7 @@ package product
 
 import (
 	//"gorm.io/gorm"
-	entity "GO/model/entity"
+	entity "magento.GO/model/entity"
 )
 
 type ProductMediaGallery struct {
