@@ -15,6 +15,24 @@ import (
 	productService "magento.GO/service/product"
 )
 
+// Handler for /flat and /full endpoints
+func flatProductsHandler(repo *productRepository.ProductRepository) echo.HandlerFunc {
+	return func(c echo.Context) error {
+		start := time.Now()
+		flatProducts, err := repo.FetchWithAllAttributesFlat()
+		duration := time.Since(start).Milliseconds()
+		if err != nil {
+			return c.JSON(http.StatusInternalServerError, echo.Map{"error": err.Error(), "request_duration_ms": duration})
+		}
+		c.Response().Header().Set("X-Request-Duration-ms", strconv.FormatInt(duration, 10))
+		return c.JSON(http.StatusOK, echo.Map{
+			"products": flatProducts,
+			"count": len(flatProducts),
+			"request_duration_ms": duration,
+		})
+	}
+}
+
 func RegisterProductRoutes(api *echo.Group, db *gorm.DB) {
 	repo := productRepository.GetProductRepository(db)
 	service := productService.NewProductService(repo)
@@ -99,20 +117,8 @@ func RegisterProductRoutes(api *echo.Group, db *gorm.DB) {
 		return c.NoContent(http.StatusNoContent)
 	})
 
-	g.GET("/flat", func(c echo.Context) error {
-		start := time.Now()
-		flatProducts, err := repo.FetchWithAllAttributesFlat()
-		duration := time.Since(start).Milliseconds()
-		if err != nil {
-			return c.JSON(http.StatusInternalServerError, echo.Map{"error": err.Error(), "request_duration_ms": duration})
-		}
-		c.Response().Header().Set("X-Request-Duration-ms", strconv.FormatInt(duration, 10))
-		return c.JSON(http.StatusOK, echo.Map{
-			"products": flatProducts,
-			"count": len(flatProducts),
-			"request_duration_ms": duration,
-		})
-	})
+	g.GET("/flat", flatProductsHandler(repo))
+	g.GET("/full", flatProductsHandler(repo))
 
 	g.GET("/flat/:ids", func(c echo.Context) error {
 		start := time.Now()
