@@ -1,9 +1,61 @@
 {{define "parts/header.html"}}
+<script>
+// Define global functions for mobile menu
+window.openMobileMenu = function() {
+    document.getElementById('mobileDropdownOverlay').classList.remove('hidden');
+    document.getElementById('mobileDropdown').classList.remove('hidden');
+    document.getElementById('mobileCloseBtn').classList.remove('hidden');
+    document.body.style.overflow = 'auto'; // Allow scrolling
+    document.body.style.paddingRight = '0'; // Prevent layout shift
+}
+
+window.closeMobileMenu = function() {
+    document.getElementById('mobileDropdownOverlay').classList.add('hidden');
+    document.getElementById('mobileDropdown').classList.add('hidden');
+    document.getElementById('mobileCloseBtn').classList.add('hidden');
+    document.body.style.overflow = ''; // Restore default
+    document.body.style.paddingRight = ''; // Restore default
+}
+
+window.toggleMobileMenu = function() {
+    const mobileDropdown = document.getElementById('mobileDropdown');
+    if (mobileDropdown.classList.contains('hidden')) {
+        openMobileMenu();
+    } else {
+        closeMobileMenu();
+    }
+}
+
+// Initialize other event listeners when DOM is ready
+document.addEventListener('DOMContentLoaded', function() {
+    const cartIcon = document.getElementById('cart-icon');
+    const cartDropdown = document.getElementById('cart-dropdown');
+
+    if (cartIcon && cartDropdown) {
+        cartIcon.addEventListener('click', function(e) {
+            e.preventDefault();
+            e.stopPropagation();
+            cartDropdown.classList.toggle('hidden');
+            return false;
+        });
+
+        cartDropdown.addEventListener('click', function(e) {
+            e.stopPropagation();
+        });
+
+        // Hide dropdown when clicking outside
+        document.addEventListener('click', function(e) {
+            cartDropdown.classList.add('hidden');
+        });
+    }
+});
+</script>
+
 <header class="bg-blue-600 text-white p-4 mb-6 relative" style="margin-bottom: 15px;">
     <div class="container mx-auto flex justify-between items-center">
         <div class="flex items-center">
-            <!-- Fake Hamburger Menu for Mobile -->
-            <button id="hamburgerBtn" class="flex flex-col justify-center items-center w-10 h-10 mr-2 focus:outline-none" aria-label="Open menu" onclick="document.getElementById('mobileDropdown').classList.toggle('hidden')">
+            <!-- Hamburger Menu for Mobile -->
+            <button id="hamburgerBtn" class="flex flex-col justify-center items-center w-10 h-10 mr-2 focus:outline-none" aria-label="Toggle menu" onclick="toggleMobileMenu()">
                 <span class="block w-6 h-0.5 bg-white mb-1"></span>
                 <span class="block w-6 h-0.5 bg-white mb-1"></span>
                 <span class="block w-6 h-0.5 bg-white"></span>
@@ -13,8 +65,13 @@
                 <!-- Add navigation links here if needed -->
             </nav>
         </div>
-        <div class="relative inline-block">
-            <button type="button" id="cart-icon" class="ml-4 hover:text-yellow-300 flex items-center" aria-label="Cart">
+        <div class="relative inline-flex items-center gap-2">
+            <button type="button" id="user-icon" class="inline-flex items-center hover:text-yellow-300" aria-label="Customer Account">
+                <svg class="w-6 h-6" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24" aria-hidden="true">
+                    <path stroke-linecap="round" stroke-linejoin="round" d="M15.75 6a3.75 3.75 0 11-7.5 0 3.75 3.75 0 017.5 0zM4.501 20.118a7.5 7.5 0 0114.998 0A17.933 17.933 0 0112 21.75c-2.676 0-5.216-.584-7.499-1.632z" />
+                </svg>
+            </button>
+            <button type="button" id="cart-icon" class="inline-flex items-center hover:text-yellow-300" aria-label="Cart">
                 <svg class="w-6 h-6" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24" aria-hidden="true">
                     <circle cx="9" cy="21" r="1"></circle>
                     <circle cx="20" cy="21" r="1"></circle>
@@ -27,18 +84,39 @@
         </div>
     </div>
     <!-- Dynamic Dropdown for Mobile -->
-    <div id="mobileDropdown" class="md:hidden absolute left-0 right-0 top-full bg-white text-blue-600 shadow-lg hidden z-50">
-        <ul class="flex flex-col divide-y divide-blue-100">
-            {{.CategoryTreeHTML}}
-        </ul>
+    <div id="mobileDropdownOverlay" class="fixed inset-0 bg-black bg-opacity-50 hidden z-40" onclick="closeMobileMenu()"></div>
+    <button type="button"
+        onclick="closeMobileMenu()"
+        class="fixed p-2 bg-white rounded-full shadow-lg text-gray-500 hover:text-blue-600 focus:outline-none z-[100] transform hover:scale-110 transition-transform duration-200 hidden"
+        style="right: 5px; top: 80px;"
+        id="mobileCloseBtn"
+        aria-label="Close menu">
+        <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
+        </svg>
+    </button>
+    <div id="mobileDropdown" class="fixed inset-0 bg-white text-blue-600 shadow-lg hidden z-50 overflow-y-auto" style="margin-right: -20px; margin-left: -20px; top: 75px;">
+        <div class="relative container mx-auto px-4 min-h-screen -mx-5">
+            <ul class="flex flex-col">
+                {{.CategoryTreeHTML}}
+            </ul>
+        </div>
     </div>
 </header>
 {{end}}
 
 {{define "category_tree"}}
+<style>
+    a#cat-1 {
+        display: none;
+    }
+    a#cat-2 {
+        display: none;
+    }
+</style>
     {{- range . }}
         <li>
-            <a href="/category/{{.Category.EntityID}}" class="block px-6 py-3 hover:bg-blue-50">
+            <a href="/category/{{.Category.EntityID}}" class="block px-2 py-0 hover:bg-blue-50" id="cat-{{.Category.EntityID}}">
                 {{with index .Attributes "name"}}
                     {{if .value}}{{.value}}{{else}}{{$.Category.EntityID}}{{end}}
                 {{else}}
@@ -60,34 +138,4 @@
     {{else}}
         {{.1}}
     {{end}}
-{{end}}
-
-<script>
-document.addEventListener('DOMContentLoaded', function() {
-  const cartIcon = document.getElementById('cart-icon');
-  const cartDropdown = document.getElementById('cart-dropdown');
-
-  if (!cartIcon || !cartDropdown) {
-    console.log('Cart icon or dropdown not found!');
-    return;
-  }
-
-  cartIcon.addEventListener('click', function(e) {
-    e.preventDefault();
-    e.stopPropagation();
-    cartDropdown.classList.toggle('hidden');
-    // Debug
-    console.log('Cart icon clicked, dropdown toggled');
-    return false;
-  });
-
-  cartDropdown.addEventListener('click', function(e) {
-    e.stopPropagation();
-  });
-
-  // Hide dropdown when clicking outside
-  document.addEventListener('click', function(e) {
-    cartDropdown.classList.add('hidden');
-  });
-});
-</script> 
+{{end}} 

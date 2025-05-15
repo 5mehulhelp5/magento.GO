@@ -8,7 +8,7 @@ import (
 	productRepo "magento.GO/model/repository/product"
 	"html/template"
 	parts "magento.GO/html/parts"
-	"io"
+	//"io"
 	"log"
 	"magento.GO/config"
 	"strings"
@@ -36,7 +36,6 @@ func RenderCategoryTreeCached(tmpl *template.Template, tree interface{}) (string
 	// Not cached or expired: render and cache
 	var buf bytes.Buffer
 	err := tmpl.ExecuteTemplate(&buf, "category_tree", tree)
-	//categoryTreeHTML := buf.String()
 	if err != nil {
 		return "", err
 	}
@@ -47,34 +46,6 @@ func RenderCategoryTreeCached(tmpl *template.Template, tree interface{}) (string
 	categoryTreeCacheLock.Unlock()
 
 	return categoryTreeHTMLCache, nil
-}
-
-type Template struct {
-	Templates *template.Template
-}
-
-func (t *Template) Render(w io.Writer, name string, data interface{}, c echo.Context) error {
-	return t.Templates.ExecuteTemplate(w, name, data)
-}
-
-func dict(values ...interface{}) map[string]interface{} {
-	if len(values)%2 != 0 {
-		panic("dict expects an even number of arguments")
-	}
-	m := make(map[string]interface{}, len(values)/2)
-	for i := 0; i < len(values); i += 2 {
-		key, ok := values[i].(string)
-		if !ok {
-			panic("dict keys must be strings")
-		}
-		m[key] = values[i+1]
-	}
-	return m
-}
-
-// Exported Dict for template FuncMap
-func Dict(values ...interface{}) map[string]interface{} {
-	return dict(values...)
 }
 
 // Helper to build breadcrumbs from a category path string
@@ -203,6 +174,10 @@ func RegisterProductHTMLRoutes(e *echo.Echo, db *gorm.DB) {
 							//log.Printf("Product %v breadcrumbs: %v", id, bcIDs)
 						}
 					}
+				}
+				// Process description to be safe HTML for template rendering
+				if desc, ok := prod["description"].(string); ok {
+					prod["description"] = template.HTML(desc)
 				}
 				products = append(products, prod)
 				//log.Printf("Product %v: %v", id, prod)

@@ -4,7 +4,7 @@
 {{template "parts/head.html" .}}
 <body class="bg-gray-100">
     {{template "parts/header.html" .}}
-    <main class="container mx-auto py-6" style="padding-top: 0px;">
+    <main class="container mx-auto py-6 overflow-hidden" style="padding-top: 0px;">
         {{if .Products}}
             {{range .Products}}
                 {{template "parts/product_content.html" (dict "Product" . "MediaUrl" $.MediaUrl)}}

@@ -69,5 +69,5 @@
 **To extend the app:**
 1. Generate a GORM model for your Magento table (see above).
 2. Add a new API handler in `magento.GO/api/` using Echo.
-3. Register the handler in `magento.GO/main.go`.
+3. Register the handler in `magento.GO/magento.go`.
 4. Test your endpoint with HTTP Basic Auth. 

@@ -158,9 +158,7 @@ func main() {
 
 	// Register the template renderer
 	t := &html.Template{
-		Templates: template.Must(template.New("").Funcs(template.FuncMap{
-			"dict": html.Dict,
-		}).ParseGlob("html/**/*.html")),
+		Templates: template.Must(template.New("").Funcs(html.GetTemplateFuncs()).ParseGlob("html/**/*.html")),
 	}
 	e.Renderer = t
 

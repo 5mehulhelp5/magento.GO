@@ -15,60 +15,123 @@ import (
 	"fmt"
 )
 
-type CategoryTemplate struct {
-	Templates *template.Template
+// PaginationData holds all pagination-related information
+type PaginationData struct {
+	Page        int
+	Limit       int
+	TotalItems  int
+	TotalPages  int
+	PageNumbers []int
+	PrevPage    int
+	NextPage    int
 }
 
-func (t *CategoryTemplate) Render(w http.ResponseWriter, name string, data interface{}, c echo.Context) error {
-	return t.Templates.ExecuteTemplate(w, name, data)
+// calculatePagination creates pagination data based on total items and request parameters
+func calculatePagination(c echo.Context, totalItems int) PaginationData {
+	// Get pagination parameters
+	limit := 20
+	if lStr := c.QueryParam("limit"); lStr != "" {
+		if l, err := strconv.Atoi(lStr); err == nil && l > 0 {
+			limit = l
+		}
+	}
+	page := 1
+	if pStr := c.QueryParam("p"); pStr != "" {
+		if p, err := strconv.Atoi(pStr); err == nil && p > 0 {
+			page = p
+		}
+	}
+
+	// Calculate total pages
+	totalPages := (totalItems + limit - 1) / limit
+	if page > totalPages {
+		page = totalPages
+	}
+	if page < 1 {
+		page = 1
+	}
+
+	// Calculate page numbers to show
+	maxPagesToShow := 5 // Show at most 5 pages
+	startPage := page - maxPagesToShow/2
+	if startPage < 1 {
+		startPage = 1
+	}
+	endPage := startPage + maxPagesToShow - 1
+	if endPage > totalPages {
+		endPage = totalPages
+		// Adjust start page if we're near the end
+		startPage = endPage - maxPagesToShow + 1
+		if startPage < 1 {
+			startPage = 1
+		}
+	}
+
+	var pageNumbers []int
+	for i := startPage; i <= endPage; i++ {
+		pageNumbers = append(pageNumbers, i)
+	}
+
+	// Calculate prev/next pages
+	prevPage := page - 1
+	if prevPage < 1 {
+		prevPage = 1
+	}
+	nextPage := page + 1
+	if nextPage > totalPages {
+		nextPage = totalPages
+	}
+
+	return PaginationData{
+		Page:        page,
+		Limit:       limit,
+		TotalItems:  totalItems,
+		TotalPages:  totalPages,
+		PageNumbers: pageNumbers,
+		PrevPage:    prevPage,
+		NextPage:    nextPage,
+	}
 }
 
 // RegisterCategoryHTMLRoutes registers HTML routes for category rendering
 func RegisterCategoryHTMLRoutes(e *echo.Echo, db *gorm.DB) {
 	repo := categoryRepo.GetCategoryRepository(db)
 	prodRepo := productRepo.GetProductRepository(db)
+	
 	e.GET("/category/:id", func(c echo.Context) error {
 		idStr := c.Param("id")
 		id, err := strconv.ParseUint(idStr, 10, 64)
 		if err != nil {
 			return c.String(http.StatusBadRequest, "Invalid category ID")
 		}
+
 		start := time.Now()
 		cat, flat, err := repo.GetByIDWithAttributesAndFlat(uint(id), 0)
 		log.Printf("GetByIDWithAttributesAndFlat took %s", time.Since(start))
 		if err != nil || cat == nil {
 			return c.String(http.StatusNotFound, "Category not found")
 		}
-		// Pagination parameters
-		limit := 20
-		if lStr := c.QueryParam("limit"); lStr != "" {
-			if l, err := strconv.Atoi(lStr); err == nil && l > 0 {
-				limit = l
-			}
-		}
-		page := 1
-		if pStr := c.QueryParam("p"); pStr != "" {
-			if p, err := strconv.Atoi(pStr); err == nil && p > 0 {
-				page = p
-			}
-		}
+
 		// Extract product IDs from cat.Products
 		var productIDs []uint
 		for _, cp := range cat.Products {
 			productIDs = append(productIDs, cp.ProductID)
 		}
-		// Pagination logic
-		totalProducts := len(productIDs)
-		totalPages := (totalProducts + limit - 1) / limit
-		startIdx := (page - 1) * limit
-		endIdx := startIdx + limit
-		if startIdx > totalProducts {
-			startIdx = totalProducts
+
+		// Get pagination data
+		pagination := calculatePagination(c, len(productIDs))
+
+		// Apply pagination to product IDs
+		startIdx := (pagination.Page - 1) * pagination.Limit
+		endIdx := startIdx + pagination.Limit
+		if startIdx > len(productIDs) {
+			startIdx = len(productIDs)
 		}
-		if endIdx > totalProducts {
-			endIdx = totalProducts
+		if endIdx > len(productIDs) {
+			endIdx = len(productIDs)
 		}
 		pagedProductIDs := productIDs[startIdx:endIdx]
+
 		// Fetch product data with attributes
 		var products []map[string]interface{}
 		if len(pagedProductIDs) > 0 {
@@ -83,19 +146,8 @@ func RegisterCategoryHTMLRoutes(e *echo.Echo, db *gorm.DB) {
 				}
 			}
 		}
-		// After calculating totalPages and page
-		var pageNumbers []int
-		for i := 1; i <= totalPages; i++ {
-			pageNumbers = append(pageNumbers, i)
-		}
-		prevPage := page - 1
-		if prevPage < 1 {
-			prevPage = 1
-		}
-		nextPage := page + 1
-		if nextPage > totalPages {
-			nextPage = totalPages
-		}
+
+		// Get category tree
 		tmpl := c.Echo().Renderer.(*Template)
 		start = time.Now()
 		categoryTree, err := repo.BuildCategoryTree(0, 0)
@@ -110,10 +162,14 @@ func RegisterCategoryHTMLRoutes(e *echo.Echo, db *gorm.DB) {
 				categoryTreeHTML = ""
 			}
 		}
+
+		// Get critical CSS
 		criticalCSS, err := parts.GetCriticalCSSCached()
 		if err != nil {
 			criticalCSS = ""
 		}
+
+		// Get title
 		var title string
 		if nameMap, ok := flat["name"]; ok {
 			if val, ok := nameMap["Value"].(string); ok {
@@ -124,35 +180,22 @@ func RegisterCategoryHTMLRoutes(e *echo.Echo, db *gorm.DB) {
 			title = fmt.Sprintf("%v", cat.EntityID) // fallback to ID if name is missing
 		}
 		title = "Category Page - " + title + " - Magento.GO"
+
+		// Render template with all data
 		return c.Render(http.StatusOK, "parts/category_layout.html", map[string]interface{}{
-			"Category": cat,
-			"Attributes": flat,
-			"Title": title,
-			"Products": products,
-			"CriticalCSS": template.CSS(criticalCSS),
+			"Category":         cat,
+			"Attributes":       flat,
+			"Title":           title,
+			"Products":        products,
+			"CriticalCSS":     template.CSS(criticalCSS),
 			"CategoryTreeHTML": template.HTML(categoryTreeHTML),
-			"Page": page,
-			"TotalPages": totalPages,
-			"Limit": limit,
-			"MediaUrl": config.AppConfig.MediaUrl,
-			"PageNumbers": pageNumbers,
-			"PrevPage": prevPage,
-			"NextPage": nextPage,
+			"MediaUrl":        config.AppConfig.MediaUrl,
+			"Page":            pagination.Page,
+			"TotalPages":      pagination.TotalPages,
+			"Limit":           pagination.Limit,
+			"PageNumbers":     pagination.PageNumbers,
+			"PrevPage":        pagination.PrevPage,
+			"NextPage":        pagination.NextPage,
 		})
 	})
-}
-
-// CategoryTemplateFuncs returns FuncMap with helpers for pagination
-func CategoryTemplateFuncs() template.FuncMap {
-	return template.FuncMap{
-		"add": func(a, b int) int { return a + b },
-		"sub": func(a, b int) int { return a - b },
-		"until": func(count int) []int {
-			s := make([]int, count)
-			for i := 0; i < count; i++ {
-				s[i] = i
-			}
-			return s
-		},
-	}
 } 

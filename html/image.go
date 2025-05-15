@@ -41,7 +41,7 @@ func RegisterImageRoutes(e *echo.Echo) {
 		if typeStr != "" {
 			imgType = typeStr
 		}
-		quality := 80
+		quality := 95
 		if qStr != "" {
 			if q, err := strconv.Atoi(qStr); err == nil && q >= 1 && q <= 100 {
 				quality = q
@@ -114,12 +114,45 @@ func RegisterImageRoutes(e *echo.Echo) {
 			origBounds := img.Bounds()
 			origW := origBounds.Dx()
 			origH := origBounds.Dy()
-			if width > 0 && height == 0 {
+
+			// If both dimensions specified, fit and pad
+			if width > 0 && height > 0 {
+				// Calculate target dimensions while maintaining aspect ratio
+				ratioW := float64(width) / float64(origW)
+				ratioH := float64(height) / float64(origH)
+				var resizeW, resizeH int
+				
+				if ratioW < ratioH {
+					// Width is the constraining factor
+					resizeW = width
+					resizeH = int(float64(origH) * ratioW)
+				} else {
+					// Height is the constraining factor
+					resizeH = height
+					resizeW = int(float64(origW) * ratioH)
+				}
+
+				// Resize the image with better quality settings
+				resized := imaging.Resize(img, resizeW, resizeH, imaging.CatmullRom)
+
+				// Create a new white background image of the target size
+				background := imaging.New(width, height, image.White)
+
+				// Calculate position to center the resized image
+				posX := (width - resizeW) / 2
+				posY := (height - resizeH) / 2
+
+				// Paste the resized image onto the white background
+				img = imaging.Paste(background, resized, image.Point{posX, posY})
+			} else if width > 0 {
+				// Only width specified - calculate height
 				height = int(float64(width) * float64(origH) / float64(origW))
-			} else if height > 0 && width == 0 {
+				img = imaging.Resize(img, width, height, imaging.CatmullRom)
+			} else if height > 0 {
+				// Only height specified - calculate width
 				width = int(float64(height) * float64(origW) / float64(origH))
+				img = imaging.Resize(img, width, height, imaging.CatmullRom)
 			}
-			img = imaging.Resize(img, width, height, imaging.Lanczos)
 		}
 		// Ensure cache directory exists
 		os.MkdirAll(cacheDir, 0755)
@@ -139,7 +172,11 @@ func RegisterImageRoutes(e *echo.Echo) {
 			imaging.Encode(io.MultiWriter(c.Response(), f), img, imaging.PNG)
 		case "webp":
 			c.Response().Header().Set("Content-Type", "image/webp")
-			opts := &webp.Options{Quality: float32(quality)}
+			opts := &webp.Options{
+				Quality: float32(quality),
+				Exact: true,    // Preserve color accuracy
+				Lossless: true, // Use lossless compression for best quality
+			}
 			webp.Encode(io.MultiWriter(c.Response(), f), img, opts)
 		default:
 			c.Response().Header().Set("Content-Type", "image/jpeg")
