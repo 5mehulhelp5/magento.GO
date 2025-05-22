@@ -38,9 +38,23 @@ func NewDB() (*gorm.DB, error) {
 
 	db, err := gorm.Open(mysql.Open(dsn), &gorm.Config{
 		Logger: gormLogger,
+		PrepareStmt: true, // Enable prepared statements
 	})
 	if err != nil {
 		return nil, err
 	}
+
+	// Get generic database object
+    sqlDB, err := db.DB()
+    if err != nil {
+        return nil, err
+    }
+
+    // Configure connection pool
+    sqlDB.SetMaxOpenConns(25)       // Maximum open connections
+    sqlDB.SetMaxIdleConns(25)       // Maximum idle connections
+    sqlDB.SetConnMaxLifetime(5 * time.Minute)  // Maximum connection lifetime
+    sqlDB.SetConnMaxIdleTime(2 * time.Minute)  // Maximum idle time
+	
 	return db, nil
 } 
