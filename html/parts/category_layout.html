@@ -40,7 +40,7 @@
                     <div class="bg-white rounded shadow p-4 flex flex-col items-center">
                         <a href="/product/{{index $prod "entity_id"}}">
                             <img
-                                src="/image/webp?src={{$.MediaUrl}}{{index $prod "image"}}&w=200&h=200&type=webp"
+                                src="/image/webp?src={{$.MediaUrl}}{{index $prod "image"}}&w=200&h=200&type=webp&q=90"
                                 alt="{{index $prod "name"}}"
                                 class="w-[200px] h-[200px] object-contain mb-2 rounded mx-auto"
                                 {{if ge $i 2}}loading="lazy"{{end}}

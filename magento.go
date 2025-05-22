@@ -8,6 +8,7 @@ import (
 	"html/template"
 	"fmt"
 	"net/http"
+	"strings"
 	"github.com/labstack/echo/v4"
 	"github.com/labstack/echo/v4/middleware"
 	"magento.GO/config"
@@ -114,6 +115,19 @@ func main() {
 
 	e := echo.New()
 	
+	// Middleware to add cache control headers
+	e.Use(func(next echo.HandlerFunc) echo.HandlerFunc {
+		return func(c echo.Context) error {
+			path := c.Request().URL.Path
+			log.Printf("Request path: %s", path) // Log the request path
+			if strings.HasPrefix(path, "/static/") {
+				log.Println("Setting cache headers") // Log when setting headers
+				c.Response().Header().Set("Cache-Control", "public, max-age=31536000, immutable")
+			}
+			return next(c)
+		}
+	})
+
 	// Serve static files from the 'assets' directory at '/static/*'
 	e.Static("/static", "assets")
 

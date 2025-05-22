@@ -1,12 +1,30 @@
 {{define "parts/head.html"}}
 <head>
-    <title>{{.Title}}</title>
-    <meta name="viewport" content="width=device-width, initial-scale=1">
-    {{if and .CriticalCSS (ne .CriticalCSS "")}}
-        <style type="text/css">{{.CriticalCSS}}</style>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    {{if .Product}}
+        <meta name="description" content="Buy {{.Product.name}} (SKU: {{.Product.sku}}) - {{if .Product.description}}{{slice .Product.description 0 150}}...{{else}}High-quality product from our store{{end}}">
+        <meta property="og:title" content="{{.Product.name}} - {{.Title}}">
+        <meta property="og:description" content="{{if .Product.description}}{{slice .Product.description 0 150}}...{{else}}High-quality product from our store{{end}}">
+        {{if .Product.image}}
+        <meta property="og:image" content="{{.MediaUrl}}{{.Product.image}}">
+        {{end}}
+    {{else if .Category}}
+        <meta name="description" content="Browse our {{.Title}} collection. Find the best products in our catalog.">
+        <meta property="og:title" content="{{.Title}}">
+        <meta property="og:description" content="Browse our {{.Title}} collection. Find the best products in our catalog.">
     {{else}}
-        <link href="/static/tailwind.min.css" rel="stylesheet">
+        <meta name="description" content="Welcome to our online store. Discover our wide range of high-quality products.">
+        <meta property="og:title" content="{{.Title}}">
+        <meta property="og:description" content="Welcome to our online store. Discover our wide range of high-quality products.">
     {{end}}
-    <link rel="icon" href="/static/images/favicon.png" sizes="any">
+    <meta property="og:type" content="website">
+    <meta property="og:site_name" content="Magento.GO Store">
+    <title>{{.Title}}</title>
+    {{if .CriticalCSS}}
+        <style>{{.CriticalCSS}}</style>
+    {{else}}
+        <link rel="stylesheet" href="/static/css/tailwind.css">
+    {{end}}
 </head>
 {{end}}

@@ -24,6 +24,9 @@ func RegisterImageRoutes(e *echo.Echo) {
 		typeStr := c.QueryParam("type")
 		qStr := c.QueryParam("q")
 
+		// Set cache control headers
+		c.Response().Header().Set("Cache-Control", "public, max-age=31536000, immutable")
+
 		if src == "" {
 			return c.JSON(http.StatusBadRequest, map[string]string{"error": "src parameter is required"})
 		}
