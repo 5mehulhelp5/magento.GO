@@ -13,13 +13,7 @@ import (
 func NewDB() (*gorm.DB, error) {
 	dsn := os.Getenv("MYSQL_DSN")
 	if dsn == "" {
-		user := os.Getenv("MYSQL_USER")
-		pass := os.Getenv("MYSQL_PASS")
-		host := os.Getenv("MYSQL_HOST")
-		port := os.Getenv("MYSQL_PORT")
-		db := os.Getenv("MYSQL_DB")
-		if port == "" { port = "3306" }
-		dsn = fmt.Sprintf("%s:%s@tcp(%s:%s)/%s?parseTime=true&charset=utf8mb4&loc=Local", user, pass, host, port, db)
+		dsn = GetDBConnectionString()
 	}
 
 	logMode := logger.Info
@@ -57,4 +51,26 @@ func NewDB() (*gorm.DB, error) {
     sqlDB.SetConnMaxIdleTime(2 * time.Minute)  // Maximum idle time
 	
 	return db, nil
-} 
+}
+
+// GetDBConnectionString returns formatted MySQL connection string
+func GetDBConnectionString() string {
+	return fmt.Sprintf("%s:%s@tcp(%s:%s)/%s?charset=utf8mb4&parseTime=True&loc=Local",
+		os.Getenv("MYSQL_USER"),
+		os.Getenv("MYSQL_PASS"),
+		os.Getenv("MYSQL_HOST"),
+		os.Getenv("MYSQL_PORT"),
+		os.Getenv("MYSQL_DB"),
+	)
+}
+
+// GetMigrationDSN returns migration-compatible DSN
+func GetMigrationDSN() string {
+	return fmt.Sprintf("mysql://%s:%s@tcp(%s:%s)/%s",
+		os.Getenv("MYSQL_USER"),
+		os.Getenv("MYSQL_PASS"),
+		os.Getenv("MYSQL_HOST"),
+		os.Getenv("MYSQL_PORT"),
+		os.Getenv("MYSQL_DB"),
+	)
+}

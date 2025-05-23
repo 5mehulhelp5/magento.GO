@@ -3,6 +3,8 @@ package config
 import (
 	"os"
 	"sync"
+	"runtime"
+	"path/filepath"
 )
 
 // AppConfig holds global application configuration
@@ -16,6 +18,13 @@ type Config struct {
 	Debug     bool
 	MediaUrl  string
 	// Add more fields as needed
+}
+
+// GetBasePath returns the project's root directory
+func GetBasePath() string {
+	_, b, _, _ := runtime.Caller(0)
+	basepath := filepath.Dir(b)
+	return filepath.Dir(basepath) // Adjust based on your project structure
 }
 
 // LoadAppConfig initializes the global AppConfig variable

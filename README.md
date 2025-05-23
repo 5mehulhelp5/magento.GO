@@ -754,3 +754,77 @@ nohup ./magento > output.log 2>&1 &
    ```
 
 ---
+
+## Cron Jobs and CLI Usage
+
+This project supports scheduled and on-demand background jobs using the [robfig/cron](https://github.com/robfig/cron) library and a modular CLI.
+
+### Directory Structure
+- `cron/jobs/` — Individual job implementations (e.g., `product_json.go`)
+- `cron/sheduler.go` — Cron scheduler setup and job registration
+- `cmd/cron.go` — CLI command for starting the scheduler or running jobs on demand
+
+### Running the Cron Scheduler
+To start all scheduled cron jobs (as a foreground process):
+```bash
+go run cli.go cron:start
+```
+Or as a background daemon:
+```bash
+nohup go run cli.go cron:start > cron.log 2>&1 &
+```
+
+### Running a Single Job by Name
+You can run a single job immediately by name:
+```bash
+go run cli.go cron:start --job ProductJsonJob
+# or with parameters:
+go run cli.go cron:start --job ProductJsonJob param1 param2
+```
+- The job name is case-insensitive.
+- All extra arguments are passed to the job function as parameters.
+
+### Adding New Jobs
+1. Create a new file in `cron/jobs/` and implement your job as `func(params ...string)`.
+2. Register the job in `cron/sheduler.go` for scheduled execution (wrap in a closure: `func() { jobs.YourJob() }`).
+3. Add a case for your job in `cmd/cron.go` to allow CLI execution by name.
+
+### Example Job Implementation
+```go
+// cron/jobs/product_json.go
+func ProductJsonJob(params ...string) {
+    fmt.Println("Running ProductJsonJob", params)
+    // Your logic here
+}
+```
+
+### Example CLI Command
+```bash
+go run cli.go cron:start --job ProductJsonJob 123 store2
+```
+
+### Production Daemon (systemd)
+For production, create a systemd service to run the scheduler as a daemon. See the project documentation for a sample unit file.
+
+### Example: Adding and Using a CronJobs
+
+1. **Register the job in `config/cron.go`:**
+   ```go
+   var CronJobs = map[string]CronJob{
+       "productjsonjob": {Schedule: "0 * * * *", Job: jobs.ProductJsonJob},
+       "testjob":        {Schedule: "@every 10s", Job: jobs.TestJob},
+   }
+   ```
+   You can add more Jobs here 
+
+2. **Run the test job manually:**
+   ```bash
+   go run cli.go cron:start --job TestJob
+   # or with parameters:
+   go run cli.go cron:start --job TestJob foo bar
+   ```
+
+3. **Scheduled run:**
+   - When the scheduler is started, `TestJob` will run every 10 seconds automatically.
+
+---
