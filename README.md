@@ -1,4 +1,4 @@
-# Magento Go API
+# Magento Go API and Frontend
 
 A fully functional REST API and HTTP server for Magento using Go, Echo, and GORM.
 
