@@ -1,0 +1,11 @@
+# Reusable test image - build once, run tests with mounted source
+FROM golang:1.23-alpine
+WORKDIR /app
+
+RUN apk add --no-cache git
+
+# Cache go mod download (build layer reused until go.mod/go.sum change)
+COPY go.mod go.sum ./
+RUN go mod download
+
+# Source is mounted at runtime - no COPY of source here

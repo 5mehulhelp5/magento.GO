@@ -1,0 +1,8 @@
+.git
+.env
+.env.*
+*.md
+Dockerfile
+docker-compose.yml
+.dockerignore
+run-docker.sh

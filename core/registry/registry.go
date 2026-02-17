@@ -6,9 +6,34 @@ import (
 
 // Registry manages both permanent (shared) and request-isolated key-value storage.
 type Registry struct {
-	global   map[string]interface{}
-	globalMu sync.RWMutex
+	global    map[string]interface{}
+	locked    map[string]struct{}
+	globalMu  sync.RWMutex
 }
+
+// Lock marks a key as immutable. Call after bootstrap (e.g. after Apply). Further Register will panic.
+func (r *Registry) Lock(key string) {
+	r.globalMu.Lock()
+	defer r.globalMu.Unlock()
+	if r.locked == nil {
+		r.locked = make(map[string]struct{})
+	}
+	r.locked[key] = struct{}{}
+}
+
+// IsLocked returns true if the key is immutable.
+func (r *Registry) IsLocked(key string) bool {
+	r.globalMu.RLock()
+	defer r.globalMu.RUnlock()
+	if r.locked == nil {
+		return false
+	}
+	_, ok := r.locked[key]
+	return ok
+}
+
+// GlobalRegistry is the app-wide registry. Used by cmd, cron, api, graphql extensions.
+var GlobalRegistry = NewRegistry()
 
 // NewRegistry creates a new Registry instance.
 func NewRegistry() *Registry {
@@ -18,9 +43,15 @@ func NewRegistry() *Registry {
 }
 
 // SetGlobal sets a key-value pair in the permanent (shared) storage.
+// Panics if the key was locked via Lock().
 func (r *Registry) SetGlobal(key string, value interface{}) {
 	r.globalMu.Lock()
 	defer r.globalMu.Unlock()
+	if r.locked != nil {
+		if _, ok := r.locked[key]; ok {
+			panic("registry: " + key + " is locked (immutable)")
+		}
+	}
 	r.global[key] = value
 }
 
@@ -37,6 +68,13 @@ func (r *Registry) DeleteGlobal(key string) {
 	r.globalMu.Lock()
 	defer r.globalMu.Unlock()
 	delete(r.global, key)
+}
+
+// UnlockForTesting removes the lock on a key. For test cleanup only.
+func (r *Registry) UnlockForTesting(key string) {
+	r.globalMu.Lock()
+	defer r.globalMu.Unlock()
+	delete(r.locked, key)
 }
 
 // RequestRegistry is a per-request registry (not shared).

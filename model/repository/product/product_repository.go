@@ -6,12 +6,14 @@
 package product
 
 import (
-	productEntity "magento.GO/model/entity/product"
-	"gorm.io/gorm"
-	"fmt"
-	entity "magento.GO/model/entity"
-	"sync"
 	"os"
+	"strconv"
+	"sync"
+
+	"gorm.io/gorm"
+
+	entity "magento.GO/model/entity"
+	productEntity "magento.GO/model/entity/product"
 )
 
 var (
@@ -20,19 +22,30 @@ var (
 	flatProductsCache = make(map[uint16]map[uint]map[string]interface{})
 	flatProductsCacheOnce  sync.Once
 	flatProductsCacheLock  sync.RWMutex
-	cacheDisabled = os.Getenv("PRODUCT_FLAT_CACHE") == "off"
+	cacheDisabled func() bool = func() bool { return os.Getenv("PRODUCT_FLAT_CACHE") == "off" }
 
-	// Singleton for ProductRepository
-	productRepoInstance *ProductRepository
-	productRepoOnce sync.Once
+	// Singleton per DB: one repo per gorm.DB instance (allows test isolation)
+	productRepoCache = make(map[*gorm.DB]*ProductRepository)
+	productRepoMu    sync.RWMutex
 )
 
-// GetProductRepository returns the singleton instance of ProductRepository
+// GetProductRepository returns a ProductRepository for the given DB.
+// Uses one repo per DB instance for test isolation.
 func GetProductRepository(db *gorm.DB) *ProductRepository {
-	productRepoOnce.Do(func() {
-		productRepoInstance = NewProductRepository(db)
-	})
-	return productRepoInstance
+	productRepoMu.RLock()
+	if r, ok := productRepoCache[db]; ok {
+		productRepoMu.RUnlock()
+		return r
+	}
+	productRepoMu.RUnlock()
+	productRepoMu.Lock()
+	defer productRepoMu.Unlock()
+	if r, ok := productRepoCache[db]; ok {
+		return r
+	}
+	r := NewProductRepository(db)
+	productRepoCache[db] = r
+	return r
 }
 
 func getGlobalAttributeCodeMap(db *gorm.DB) map[uint16]string {
@@ -77,6 +90,30 @@ func (r *ProductRepository) Delete(id uint) error {
 	return r.db.Delete(&productEntity.Product{}, id).Error
 }
 
+// FetchProductIDsByCategoryWithPosition returns product IDs in a category ordered by position (ASC).
+func (r *ProductRepository) FetchProductIDsByCategoryWithPosition(categoryID uint, asc bool) ([]uint, error) {
+	order := "position ASC"
+	if !asc {
+		order = "position DESC"
+	}
+	var rows []struct {
+		ProductID uint `gorm:"column:product_id"`
+	}
+	err := r.db.Table("catalog_category_product").
+		Select("product_id").
+		Where("category_id = ?", categoryID).
+		Order(order).
+		Find(&rows).Error
+	if err != nil {
+		return nil, err
+	}
+	ids := make([]uint, len(rows))
+	for i, row := range rows {
+		ids[i] = row.ProductID
+	}
+	return ids, nil
+}
+
 func (r *ProductRepository) FetchWithAllAttributes(storeID ...uint16) ([]productEntity.Product, error) {
 	var products []productEntity.Product
 	sid := uint16(0)
@@ -97,9 +134,10 @@ func (r *ProductRepository) FetchWithAllAttributes(storeID ...uint16) ([]product
 	return products, err
 }
 
+// fetchFlatProducts loads products with all EAV attributes. Uses GORM Preload with IN clauses
+// (one query per relation), so no N+1: ~10 batch queries total regardless of product count.
 func (r *ProductRepository) fetchFlatProducts(ids []uint, storeID uint16) (map[uint]map[string]interface{}, error) {
 	var products []productEntity.Product
-	fmt.Println("DEBUG: ids:", ids)
 	db := r.db.
 		Preload("Categories").
 		Preload("MediaGallery").
@@ -121,7 +159,7 @@ func (r *ProductRepository) fetchFlatProducts(ids []uint, storeID uint16) (map[u
 	}
 
 	attrMap := getGlobalAttributeCodeMap(r.db)
-	flatProducts := make(map[uint]map[string]interface{})
+	flatProducts := make(map[uint]map[string]interface{}, len(products))
 	for i := range products {
 		id := products[i].EntityID
 		flatProducts[id] = FlattenProductAttributesWithCodes(&products[i], attrMap)
@@ -136,7 +174,7 @@ func (r *ProductRepository) FetchWithAllAttributesFlat(storeID ...uint16) (map[u
 		sid = storeID[0]
 	}
 
-	if cacheDisabled {
+	if cacheDisabled() {
 		return r.fetchFlatProducts(nil, sid)
 	}
 
@@ -167,7 +205,7 @@ func (r *ProductRepository) FetchWithAllAttributesFlatByIDs(ids []uint, storeID 
 		sid = storeID[0]
 	}
 
-	if cacheDisabled {
+	if cacheDisabled() {
 		return r.fetchFlatProducts(ids, sid)
 	}
 
@@ -219,8 +257,28 @@ func (r *ProductRepository) FetchWithAllAttributesFlatByIDs(ids []uint, storeID 
 	return result, nil
 }
 
+func attrKey(attrMap map[uint16]string, attrID uint16) string {
+	if k := attrMap[attrID]; k != "" {
+		return k
+	}
+	return strconv.FormatUint(uint64(attrID), 10)
+}
+
 func FlattenProductAttributesWithCodes(product *productEntity.Product, attrMap map[uint16]string) map[string]interface{} {
-	attrs := map[string]interface{}{}
+	n := 5 + len(product.Varchars) + len(product.Ints) + len(product.Decimals) + len(product.Texts) + len(product.Datetimes)
+	if len(product.Categories) > 0 {
+		n++
+	}
+	if len(product.MediaGallery) > 0 {
+		n++
+	}
+	if product.StockItem.ProductID != 0 {
+		n++
+	}
+	if len(product.ProductIndexPrices) > 0 {
+		n++
+	}
+	attrs := make(map[string]interface{}, n)
 	attrs["entity_id"] = product.EntityID
 	attrs["sku"] = product.SKU
 	attrs["type_id"] = product.TypeID
@@ -228,49 +286,31 @@ func FlattenProductAttributesWithCodes(product *productEntity.Product, attrMap m
 	attrs["updated_at"] = product.UpdatedAt
 
 	for _, v := range product.Varchars {
-		key := attrMap[v.AttributeID]
-		if key == "" {
-			key = fmt.Sprintf("%d", v.AttributeID)
-		}
-		attrs[key] = v.Value
+		attrs[attrKey(attrMap, v.AttributeID)] = v.Value
 	}
 	for _, v := range product.Ints {
-		key := attrMap[v.AttributeID]
-		if key == "" {
-			key = fmt.Sprintf("%d", v.AttributeID)
-		}
-		attrs[key] = v.Value
+		attrs[attrKey(attrMap, v.AttributeID)] = v.Value
 	}
 	for _, v := range product.Decimals {
-		key := attrMap[v.AttributeID]
-		if key == "" {
-			key = fmt.Sprintf("%d", v.AttributeID)
-		}
-		attrs[key] = v.Value
+		attrs[attrKey(attrMap, v.AttributeID)] = v.Value
 	}
 	for _, v := range product.Texts {
-		key := attrMap[v.AttributeID]
-		if key == "" {
-			key = fmt.Sprintf("%d", v.AttributeID)
-		}
-		attrs[key] = v.Value
+		attrs[attrKey(attrMap, v.AttributeID)] = v.Value
 	}
 	for _, v := range product.Datetimes {
-		key := attrMap[v.AttributeID]
-		if key == "" {
-			key = fmt.Sprintf("%d", v.AttributeID)
-		}
-		attrs[key] = v.Value
+		attrs[attrKey(attrMap, v.AttributeID)] = v.Value
 	}
 
 	var categoryIDs []uint
-	for _, cat := range product.Categories {
-		categoryIDs = append(categoryIDs, cat.EntityID)
+	if len(product.Categories) > 0 {
+		categoryIDs = make([]uint, 0, len(product.Categories))
+		for _, cat := range product.Categories {
+			categoryIDs = append(categoryIDs, cat.EntityID)
+		}
 	}
 	attrs["category_ids"] = categoryIDs
 
-	// Flatten media gallery
-	var mediaGallery []map[string]interface{}
+	mediaGallery := make([]map[string]interface{}, 0, len(product.MediaGallery))
 	for _, mg := range product.MediaGallery {
 		mediaGallery = append(mediaGallery, map[string]interface{}{
 			"value_id":   mg.ValueID,
@@ -295,8 +335,7 @@ func FlattenProductAttributesWithCodes(product *productEntity.Product, attrMap m
 		attrs["stock_item"] = stock
 	}
 
-	// Flatten product index prices
-	var indexPrices []map[string]interface{}
+	indexPrices := make([]map[string]interface{}, 0, len(product.ProductIndexPrices))
 	for _, ip := range product.ProductIndexPrices {
 		indexPrices = append(indexPrices, map[string]interface{}{
 			"entity_id":         ip.EntityID,

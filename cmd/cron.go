@@ -17,14 +17,19 @@ var cronStartCmd = &cobra.Command{
 	Short: "Start the cron scheduler or run a single job by name",
 	Run: func(cmd *cobra.Command, args []string) {
 		if jobName != "" {
-			cronJob, ok := config.CronJobs[strings.ToLower(jobName)]
-			if !ok {
-				fmt.Printf("Unknown job: %s\n", jobName)
-				os.Exit(1)
+			name := strings.ToLower(jobName)
+			if cronJob, ok := config.CronJobs[name]; ok {
+				fmt.Printf("Running cron job: %s\n", jobName)
+				cronJob.Job(args...)
+				return
 			}
-			fmt.Printf("Running single cron job: %s\n", jobName)
-			cronJob.Job(args...)
-			return
+			if j, ok := cron.Jobs()[name]; ok {
+				fmt.Printf("Running cron job: %s\n", jobName)
+				j.Run(args...)
+				return
+			}
+			fmt.Printf("Unknown job: %s\n", jobName)
+			os.Exit(1)
 		}
 		fmt.Println("Starting cron scheduler...")
 		c := cron.StartCron()

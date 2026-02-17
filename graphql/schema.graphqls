@@ -1,0 +1,160 @@
+# Catalog GraphQL Schema - GoGento
+# Store: header (Store), query param (__Store), or JSON payload (variables.__Store)
+# Price: guest only (customer_group_id=0) - extensible for logged-in later
+
+type Product {
+  entity_id: String!
+  sku: String!
+  name: String
+  price: Float
+  final_price: Float
+  url_key: String
+  image: String
+  short_description: String
+  description: String
+  is_in_stock: Boolean
+  qty: Float
+  type_id: String
+  category_ids: [String!]
+  media_gallery: [MediaGalleryItem!]
+}
+
+type MediaGalleryItem {
+  value_id: String!
+  value: String!
+  media_type: String
+  disabled: Boolean
+}
+
+type Category {
+  entity_id: String!
+  name: String
+  url_key: String
+  path: String
+  level: Int
+  parent_id: String
+  children: [Category!]
+  product_count: Int
+}
+
+type ProductSearchResult {
+  items: [Product!]!
+  total_count: Int!
+  page_info: PageInfo!
+}
+
+type PageInfo {
+  page_size: Int!
+  current_page: Int!
+  total_pages: Int!
+}
+
+# Magento/Venia-compatible types for GetCategories query
+input CategoryFilterInput {
+  category_uid: CategoryFilterEqualTypeInput
+}
+
+input CategoryFilterEqualTypeInput {
+  in: [String]
+  eq: String
+}
+
+input ProductAttributeFilterInput {
+  category_uid: CategoryFilterEqualTypeInput
+}
+
+input ProductAttributeSortInput {
+  position: String
+}
+
+type CategoryTree {
+  uid: String!
+  meta_title: String
+  meta_keywords: String
+  meta_description: String
+  url_path: String
+  url_key: String
+}
+
+type CategoryResult {
+  items: [CategoryTree!]!
+}
+
+type Money {
+  currency: String!
+  value: Float!
+}
+
+type ProductDiscount {
+  amount_off: Float
+}
+
+type ProductPrice {
+  final_price: Money!
+  regular_price: Money!
+  discount: ProductDiscount
+}
+
+type PriceRange {
+  maximum_price: ProductPrice!
+}
+
+type ProductImage {
+  url: String!
+}
+
+type MagentoProduct {
+  id: Int!
+  uid: String!
+  name: String
+  price_range: PriceRange!
+  sku: String!
+  small_image: ProductImage
+  stock_status: String!
+  rating_summary: Float!
+  url_key: String
+}
+
+type SearchResultPageInfo {
+  total_pages: Int!
+}
+
+type Products {
+  items: [MagentoProduct!]!
+  page_info: SearchResultPageInfo!
+  total_count: Int!
+}
+
+type Query {
+  products(
+    pageSize: Int = 20
+    currentPage: Int = 1
+    skus: [String!]
+    categoryId: String
+  ): ProductSearchResult!
+
+  product(sku: String, url_key: String): Product
+
+  categories: [Category!]!
+  category(id: String!): Category
+  categoryTree: [Category!]!
+
+  # Magento/Venia GetCategories-compatible
+  magentoCategories(filters: CategoryFilterInput): CategoryResult!
+  magentoProducts(
+    filter: ProductAttributeFilterInput
+    sort: ProductAttributeSortInput
+    pageSize: Int = 12
+    currentPage: Int = 1
+  ): Products!
+
+  search(
+    query: String!
+    pageSize: Int = 20
+    currentPage: Int = 1
+    categoryId: String
+  ): ProductSearchResult!
+
+  """Call a registered extension by name. args: JSON string of arguments."""
+  _extension(name: String!, args: String): String
+}

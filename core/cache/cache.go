@@ -41,37 +41,32 @@ type cacheItem struct {
 
 // Set stores a value for a key with an optional TTL (in seconds) and optional tags (as a string slice). If ttl is 0, the value does not expire. Tags can be provided as a []string.
 func (c *Cache) Set(key, value interface{}, ttl int64, tags []string) {
-	var cache *Cache
-	if instance != nil {
-		cache = instance
-	} else {
-		cache = GetInstance()
+	if c == nil {
+		c = GetInstance()
 	}
 	var expiresAt int64
 	if ttl > 0 {
 		expiresAt = time.Now().Add(time.Duration(ttl) * time.Second).UnixNano()
 	}
-	cache.m.Store(key, cacheItem{Value: value, ExpiresAt: expiresAt})
+	c.m.Store(key, cacheItem{Value: value, ExpiresAt: expiresAt})
 	if len(tags) > 0 {
-		cache.TagKey(key, tags)
+		c.TagKey(key, tags)
 	}
 }
 
 // Get retrieves a value for a key. Returns (value, true) if found and not expired, (nil, false) otherwise.
 func (c *Cache) Get(key interface{}) (interface{}, bool) {
-	var cache *Cache
-	if instance != nil {
-		cache = instance
-	} else {
-		cache = GetInstance()
+	if c == nil {
+		c = GetInstance()
 	}
-	v, ok := cache.m.Load(key)
+	v, ok := c.m.Load(key)
 	if !ok {
 		return nil, false
 	}
 	if item, isItem := v.(cacheItem); isItem {
 		if item.ExpiresAt > 0 && time.Now().UnixNano() > item.ExpiresAt {
-			cache.m.Delete(key)
+			c.m.Delete(key)
+			c.removeKeyFromTagIndex(key)
 			return nil, false
 		}
 		return item.Value, true
@@ -91,25 +86,29 @@ func (c *Cache) GetOrDefault(key, defaultValue interface{}) interface{} {
 
 // Delete removes a key from the cache.
 func (c *Cache) Delete(key interface{}) {
-	var cache *Cache
-	if instance != nil {
-		cache = instance
-	} else {
-		cache = GetInstance()
+	if c == nil {
+		c = GetInstance()
 	}
-	cache.m.Delete(key)
+	c.m.Delete(key)
+	c.removeKeyFromTagIndex(key)
+}
+
+// removeKeyFromTagIndex removes a key from all tag indices.
+func (c *Cache) removeKeyFromTagIndex(key interface{}) {
+	c.tagIndex.Range(func(_, val interface{}) bool {
+		val.(*sync.Map).Delete(key)
+		return true
+	})
 }
 
 // DeleteMany removes multiple keys from the cache.
 func (c *Cache) DeleteMany(keys ...interface{}) {
-	var cache *Cache
-	if instance != nil {
-		cache = instance
-	} else {
-		cache = GetInstance()
+	if c == nil {
+		c = GetInstance()
 	}
 	for _, key := range keys {
-		cache.m.Delete(key)
+		c.m.Delete(key)
+		c.removeKeyFromTagIndex(key)
 	}
 }
 
@@ -137,19 +136,26 @@ func (c *Cache) DeleteN(keys ...interface{}) {
 
 // GetMany retrieves values for multiple keys. If a key is not found, the value is nil.
 func (c *Cache) GetMany(keys ...interface{}) []interface{} {
-	var cache *Cache
-	if instance != nil {
-		cache = instance
-	} else {
-		cache = GetInstance()
+	if c == nil {
+		c = GetInstance()
 	}
 	results := make([]interface{}, len(keys))
 	for i, key := range keys {
-		v, ok := cache.m.Load(key)
-		if ok {
-			results[i] = v
-		} else {
+		v, ok := c.m.Load(key)
+		if !ok {
 			results[i] = nil
+			continue
+		}
+		if item, isItem := v.(cacheItem); isItem {
+			if item.ExpiresAt > 0 && time.Now().UnixNano() > item.ExpiresAt {
+				c.m.Delete(key)
+				c.removeKeyFromTagIndex(key)
+				results[i] = nil
+			} else {
+				results[i] = item.Value
+			}
+		} else {
+			results[i] = v
 		}
 	}
 	return results
@@ -157,15 +163,17 @@ func (c *Cache) GetMany(keys ...interface{}) []interface{} {
 
 // DumpToFile saves all cache key-values to a file as JSON.
 func (c *Cache) DumpToFile(filename string) error {
-	var cache *Cache
-	if instance != nil {
-		cache = instance
-	} else {
-		cache = GetInstance()
+	if c == nil {
+		c = GetInstance()
 	}
-	m := make(map[interface{}]interface{})
-	cache.m.Range(func(key, value interface{}) bool {
-		m[key] = value
+	m := make(map[string]interface{})
+	c.m.Range(func(key, value interface{}) bool {
+		k := fmt.Sprintf("%v", key)
+		if item, isItem := value.(cacheItem); isItem {
+			m[k] = map[string]interface{}{"Value": item.Value, "ExpiresAt": item.ExpiresAt}
+		} else {
+			m[k] = value
+		}
 		return true
 	})
 	data, err := json.MarshalIndent(m, "", "  ")
@@ -177,11 +185,8 @@ func (c *Cache) DumpToFile(filename string) error {
 
 // RestoreFromFile loads key-values from a file and populates the cache.
 func (c *Cache) RestoreFromFile(filename string) error {
-	var cache *Cache
-	if instance != nil {
-		cache = instance
-	} else {
-		cache = GetInstance()
+	if c == nil {
+		c = GetInstance()
 	}
 	data, err := os.ReadFile(filename)
 	if err != nil {
@@ -192,23 +197,41 @@ func (c *Cache) RestoreFromFile(filename string) error {
 		return err
 	}
 	for k, v := range m {
-		cache.m.Store(k, v)
+		if vm, ok := v.(map[string]interface{}); ok {
+			if val, hasVal := vm["Value"]; hasVal {
+				var exp int64
+				if e, ok := vm["ExpiresAt"].(float64); ok {
+					exp = int64(e)
+				}
+				c.m.Store(k, cacheItem{Value: val, ExpiresAt: exp})
+				continue
+			}
+		}
+		c.m.Store(k, v)
 	}
 	return nil
 }
 
 // IterateFilter iterates over all cache entries and returns a slice of values for which the callback returns true.
 func (c *Cache) IterateFilter(filter func(key, value interface{}) bool) []interface{} {
-	var cache *Cache
-	if instance != nil {
-		cache = instance
-	} else {
-		cache = GetInstance()
+	if c == nil {
+		c = GetInstance()
 	}
 	var results []interface{}
-	cache.m.Range(func(key, value interface{}) bool {
-		if filter(key, value) {
-			results = append(results, value)
+	c.m.Range(func(key, value interface{}) bool {
+		var v interface{}
+		if item, isItem := value.(cacheItem); isItem {
+			if item.ExpiresAt > 0 && time.Now().UnixNano() > item.ExpiresAt {
+				c.m.Delete(key)
+				c.removeKeyFromTagIndex(key)
+				return true
+			}
+			v = item.Value
+		} else {
+			v = value
+		}
+		if filter(key, v) {
+			results = append(results, v)
 		}
 		return true
 	})
@@ -217,6 +240,9 @@ func (c *Cache) IterateFilter(filter func(key, value interface{}) bool) []interf
 
 // TagKey assigns one or more tags (as a string slice) to a cache key.
 func (c *Cache) TagKey(key interface{}, tags []string) {
+	if c == nil {
+		return
+	}
 	for _, tag := range tags {
 		val, _ := c.tagIndex.LoadOrStore(tag, &sync.Map{})
 		km := val.(*sync.Map)
@@ -226,6 +252,9 @@ func (c *Cache) TagKey(key interface{}, tags []string) {
 
 // UntagKey removes one or more tags (as a string slice) from a cache key.
 func (c *Cache) UntagKey(key interface{}, tags []string) {
+	if c == nil {
+		return
+	}
 	for _, tag := range tags {
 		if val, ok := c.tagIndex.Load(tag); ok {
 			km := val.(*sync.Map)
@@ -236,6 +265,9 @@ func (c *Cache) UntagKey(key interface{}, tags []string) {
 
 // GetKeysByTag returns a slice of all keys assigned to a tag.
 func (c *Cache) GetKeysByTag(tag string) []interface{} {
+	if c == nil {
+		c = GetInstance()
+	}
 	var keys []interface{}
 	if val, ok := c.tagIndex.Load(tag); ok {
 		km := val.(*sync.Map)
@@ -249,11 +281,13 @@ func (c *Cache) GetKeysByTag(tag string) []interface{} {
 
 // DeleteByTag deletes all cache entries assigned to a tag.
 func (c *Cache) DeleteByTag(tag string) {
+	if c == nil {
+		c = GetInstance()
+	}
 	if val, ok := c.tagIndex.Load(tag); ok {
 		km := val.(*sync.Map)
 		km.Range(func(key, _ interface{}) bool {
 			c.Delete(key)
-			km.Delete(key)
 			return true
 		})
 		c.tagIndex.Delete(tag)

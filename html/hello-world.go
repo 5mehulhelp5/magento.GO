@@ -1,11 +1,14 @@
 package html
 
 import (
-	"net/http"
-	"time"
-	"github.com/labstack/echo/v4"
 	"fmt"
 	"html/template"
+	"net/http"
+	"time"
+
+	"github.com/labstack/echo/v4"
+
+	"magento.GO/core/registry"
 )
 
 var (
@@ -34,7 +37,7 @@ func RegisterHelloWorldRoute(e *echo.Echo) {
 		var showTime bool
 		if reqRegIface != nil {
 			if reqReg, ok := reqRegIface.(interface{ Get(string) (interface{}, bool) }); ok {
-				if v, found := reqReg.Get("request_start"); found {
+				if v, found := reqReg.Get(registry.KeyRequestStart); found {
 					if t, ok := v.(time.Time); ok {
 						start = t
 						showTime = true

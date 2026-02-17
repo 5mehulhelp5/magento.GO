@@ -1,0 +1,29 @@
+# GoGento Catalog GraphQL - connects to Warden DB and Elasticsearch
+# Run from project root: docker compose -f gogento-catalog/docker-compose.yml up -d
+# Or: cd gogento-catalog && docker compose up -d
+
+services:
+  gogento-catalog:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: gogento-catalog
+    ports:
+      - "8080:8080"
+    environment:
+      MYSQL_HOST: db
+      MYSQL_PORT: "3306"
+      MYSQL_USER: magento
+      MYSQL_PASS: magento
+      MYSQL_DB: magento
+      ELASTICSEARCH_HOST: http://elasticsearch:9200
+      ELASTICSEARCH_INDEX_PREFIX: magento2
+      PORT: "8080"
+      GORM_LOG: "off"
+    networks:
+      - vk_default
+    restart: unless-stopped
+
+networks:
+  vk_default:
+    external: true

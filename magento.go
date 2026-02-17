@@ -1,27 +1,36 @@
+//go:build !cli
+// +build !cli
+
 package main
 
 import (
-	"log"
-	"os"
-	"time"
-	"strconv"
-	"html/template"
 	"fmt"
+	"html/template"
+	"log"
+	"math/rand"
 	"net/http"
+	"os"
+	"strconv"
 	"strings"
+	"time"
+
+	"github.com/common-nighthawk/go-figure"
 	"github.com/labstack/echo/v4"
 	"github.com/labstack/echo/v4/middleware"
-	"magento.GO/config"
-	salesApi "magento.GO/api/sales"
-	productApi "magento.GO/api/product"
+
+	graphqlApi "magento.GO/api/graphql"
+	"magento.GO/api"
 	categoryApi "magento.GO/api/category"
-	html "magento.GO/html"
-	"magento.GO/core/registry"
-	"magento.GO/core/cache"
+	productApi "magento.GO/api/product"
+	salesApi "magento.GO/api/sales"
 	corelog "magento.GO/core/log"
+	"magento.GO/core/cache"
+	"magento.GO/core/registry"
+	"magento.GO/config"
+	html "magento.GO/html"
 )
 
-var GlobalRegistry = registry.NewRegistry()
+var GlobalRegistry = registry.GlobalRegistry
 var GlobalCache = cache.GetInstance()
 
 // Middleware to attach a request-isolated registry to each request
@@ -29,7 +38,7 @@ func RegistryMiddleware(next echo.HandlerFunc) echo.HandlerFunc {
 	return func(c echo.Context) error {
 		reqReg := registry.NewRequestRegistry()
 		// Store the request start time in the request registry
-		reqReg.Set("request_start", time.Now())
+		reqReg.Set(registry.KeyRequestStart, time.Now())
 		// Attach to context
 		c.Set("RequestRegistry", reqReg)
 		return next(c)
@@ -187,6 +196,10 @@ func main() {
 	productApi.RegisterProductRoutes(apiGroup, db)
 	categoryApi.RegisterCategoryAPI(apiGroup, db)
 
+	// GraphQL catalog API (no auth for now - add to skip paths if needed)
+	graphqlApi.RegisterGraphQLRoutes(e, db)
+	api.Apply(e) // custom routes from registry
+
 	// Not Autorised HTML Routes
 	html.RegisterProductHTMLRoutes(e, db)
 	html.RegisterCategoryHTMLRoutes(e, db)
@@ -203,7 +216,7 @@ func main() {
 	║ ╚═╝     ╚═╝╚═╝  ╚═╝ ╚═════╝ ╚══════╝╚═╝  ╚═══╝   ╚═╝    ╚═════╝  ░░ ╚═════╝  ╚═════╝  ║
 	║                                                                                       ║
 	╚═══════════════════════════════════════════════════════════════════════════════════════╝
-	Magento GO(GoGento) server V1.0.1
+	Magento GO(GoGento) server V1.0.2
 	`)
 
 	e.HTTPErrorHandler = func(err error, c echo.Context) {
