@@ -15,7 +15,7 @@ import (
 
 // eavRow holds a single pre-validated EAV value for raw SQL insert.
 type eavRow struct {
-	EntityID    uint
+	LinkID      uint   // entity_id or row_id depending on schema
 	AttributeID uint16
 	StoreID     uint16
 	Value       string
@@ -101,9 +101,12 @@ func collectEAV(rows [][]string, colIndex map[string]int, skuToID map[string]uin
 				continue
 			}
 
+			// Use raw SQL for EE (row_id schema) or when explicitly requested
+			useRaw := opts.RawSQL || productEntity.IsEnterprise
+
 			switch m.BackendType {
 			case "varchar":
-				if opts.RawSQL {
+				if useRaw {
 					d.buckets["varchar"] = append(d.buckets["varchar"], eavRow{entityID, m.AttrID, opts.StoreID, val})
 				} else {
 					d.varcharRows = append(d.varcharRows, productEntity.ProductVarchar{
@@ -115,7 +118,7 @@ func collectEAV(rows [][]string, colIndex map[string]int, skuToID map[string]uin
 					d.warnings = append(d.warnings, fmt.Sprintf("sku=%s attr=%s: invalid int %q", sku, m.Code, val))
 					continue
 				}
-				if opts.RawSQL {
+				if useRaw {
 					d.buckets["int"] = append(d.buckets["int"], eavRow{entityID, m.AttrID, opts.StoreID, val})
 				} else {
 					iv, _ := strconv.Atoi(val)
@@ -128,7 +131,7 @@ func collectEAV(rows [][]string, colIndex map[string]int, skuToID map[string]uin
 					d.warnings = append(d.warnings, fmt.Sprintf("sku=%s attr=%s: invalid decimal %q", sku, m.Code, val))
 					continue
 				}
-				if opts.RawSQL {
+				if useRaw {
 					d.buckets["decimal"] = append(d.buckets["decimal"], eavRow{entityID, m.AttrID, opts.StoreID, val})
 				} else {
 					dv, _ := strconv.ParseFloat(val, 64)
@@ -137,7 +140,7 @@ func collectEAV(rows [][]string, colIndex map[string]int, skuToID map[string]uin
 					})
 				}
 			case "text":
-				if opts.RawSQL {
+				if useRaw {
 					d.buckets["text"] = append(d.buckets["text"], eavRow{entityID, m.AttrID, opts.StoreID, val})
 				} else {
 					d.textRows = append(d.textRows, productEntity.ProductText{
@@ -151,7 +154,7 @@ func collectEAV(rows [][]string, colIndex map[string]int, skuToID map[string]uin
 						continue
 					}
 				}
-				if opts.RawSQL {
+				if useRaw {
 					d.buckets["datetime"] = append(d.buckets["datetime"], eavRow{entityID, m.AttrID, opts.StoreID, val})
 				} else {
 					t, err := time.Parse("2006-01-02 15:04:05", val)
@@ -170,15 +173,22 @@ func collectEAV(rows [][]string, colIndex map[string]int, skuToID map[string]uin
 
 // flushEAV writes buffered EAV rows to DB.
 func flushEAV(db *gorm.DB, d *eavData, opts ImportOptions) error {
-	if opts.RawSQL {
-		return flushEAVRaw(db, d, opts.BatchSize)
+	// For EE (row_id), must use raw SQL to specify correct column name
+	if opts.RawSQL || productEntity.IsEnterprise {
+		return flushEAVRaw(db, d, opts)
 	}
 	return flushEAVGorm(db, d, opts.BatchSize)
 }
 
-func flushEAVRaw(db *gorm.DB, d *eavData, batchSize int) error {
+func flushEAVRaw(db *gorm.DB, d *eavData, opts ImportOptions) error {
 	var wg sync.WaitGroup
 	errs := make(chan error, len(eavTables))
+
+	linkColumn := "entity_id"
+	if productEntity.IsEnterprise {
+		linkColumn = "row_id"
+	}
+	dialect := detectDialect(db)
 
 	for bt, table := range eavTables {
 		bucket := d.buckets[bt]
@@ -188,7 +198,7 @@ func flushEAVRaw(db *gorm.DB, d *eavData, batchSize int) error {
 		wg.Add(1)
 		go func(table string, bucket []eavRow) {
 			defer wg.Done()
-			if err := rawBatchUpsert(db, table, bucket, batchSize); err != nil {
+			if err := rawBatchUpsert(db, table, bucket, opts.BatchSize, linkColumn, dialect); err != nil {
 				errs <- err
 			}
 		}(table, bucket)
@@ -263,7 +273,7 @@ func flushEAVGorm(db *gorm.DB, d *eavData, batchSize int) error {
 	return nil
 }
 
-func rawBatchUpsert(db *gorm.DB, table string, rows []eavRow, batchSize int) error {
+func rawBatchUpsert(db *gorm.DB, table string, rows []eavRow, batchSize int, linkColumn string, dialect string) error {
 	for i := 0; i < len(rows); i += batchSize {
 		end := i + batchSize
 		if end > len(rows) {
@@ -275,7 +285,9 @@ func rawBatchUpsert(db *gorm.DB, table string, rows []eavRow, batchSize int) err
 		b.Grow(len(chunk) * 60)
 		b.WriteString("INSERT INTO ")
 		b.WriteString(table)
-		b.WriteString(" (entity_id, attribute_id, store_id, value) VALUES ")
+		b.WriteString(" (")
+		b.WriteString(linkColumn)
+		b.WriteString(", attribute_id, store_id, value) VALUES ")
 
 		args := make([]interface{}, 0, len(chunk)*4)
 		for j, r := range chunk {
@@ -283,13 +295,30 @@ func rawBatchUpsert(db *gorm.DB, table string, rows []eavRow, batchSize int) err
 				b.WriteByte(',')
 			}
 			b.WriteString("(?,?,?,?)")
-			args = append(args, r.EntityID, r.AttributeID, r.StoreID, r.Value)
+			args = append(args, r.LinkID, r.AttributeID, r.StoreID, r.Value)
 		}
-		b.WriteString(" ON CONFLICT(entity_id, attribute_id, store_id) DO UPDATE SET value=excluded.value")
+
+		// Use appropriate upsert syntax based on dialect
+		if dialect == "mysql" {
+			b.WriteString(" ON DUPLICATE KEY UPDATE value=VALUES(value)")
+		} else {
+			// SQLite syntax
+			b.WriteString(" ON CONFLICT(")
+			b.WriteString(linkColumn)
+			b.WriteString(", attribute_id, store_id) DO UPDATE SET value=excluded.value")
+		}
 
 		if err := db.Exec(b.String(), args...).Error; err != nil {
 			return err
 		}
 	}
 	return nil
+}
+
+// detectDialect returns "mysql" or "sqlite" based on DB driver
+func detectDialect(db *gorm.DB) string {
+	if db.Dialector.Name() == "mysql" {
+		return "mysql"
+	}
+	return "sqlite"
 }

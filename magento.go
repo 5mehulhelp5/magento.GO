@@ -23,6 +23,7 @@ import (
 	graphqlApi "magento.GO/api/graphql"
 	_ "magento.GO/api/category"
 	_ "magento.GO/api/product"
+	_ "magento.GO/api/realtime"
 	_ "magento.GO/api/sales"
 	_ "magento.GO/api/stock"
 	"magento.GO/config"
@@ -93,6 +94,9 @@ func main() {
 		corelog.Fatal("database connection failed: %v", err)
 	}
 	corelog.Info("Database connection successful.")
+
+	// Check for Magento Enterprise (Commerce) edition
+	checkMagentoEdition(db)
 
 	e := echo.New()
 	
@@ -225,4 +229,36 @@ func (r *responseWriterWithTiming) Write(b []byte) (int, error) {
 		r.WriteHeader(http.StatusOK)
 	}
 	return r.ResponseWriter.Write(b)
-} 
+}
+
+// checkMagentoEdition detects Magento staging/versioning schema (Enterprise or extensions)
+func checkMagentoEdition(db *gorm.DB) {
+	type colInfo struct {
+		Field string `gorm:"column:Field"`
+	}
+	var cols []colInfo
+	if err := db.Raw("DESCRIBE catalog_product_entity_varchar").Scan(&cols).Error; err != nil {
+		corelog.Warn("Could not detect Magento schema: %v", err)
+		return
+	}
+
+	hasRowID := false
+	hasEntityID := false
+	for _, c := range cols {
+		if c.Field == "row_id" {
+			hasRowID = true
+		}
+		if c.Field == "entity_id" {
+			hasEntityID = true
+		}
+	}
+
+	if hasRowID && !hasEntityID {
+		corelog.Info("Staging/versioning schema detected (row_id in EAV tables).")
+		corelog.Info("Import service will use row_id for EAV operations.")
+	} else if hasEntityID {
+		corelog.Info("Standard Magento schema detected (entity_id in EAV tables).")
+	} else {
+		corelog.Warn("Unknown EAV schema - missing both entity_id and row_id columns.")
+	}
+}

@@ -31,6 +31,7 @@ API_PASS=secret
 REDIS_ADDR=""
 REDIS_PASS=""
 PORT=8080
+MAGENTO_CRYPT_KEY=your_crypt_key  # From app/etc/env.php for Realtime API auth
 ```
 
 ## Features
@@ -39,6 +40,7 @@ PORT=8080
 |---------|-------------|-----|
 | **GraphQL API** | Products, categories, search; Magento/Venia-compatible schema. Store header, pagination, filters. | [graphql.md](doc/graphql.md) |
 | **REST API** | Flat products (EAV as keys), orders CRUD. Basic auth. Optional store ID. | [rest-api.md](doc/rest-api.md) |
+| **Realtime API** | Sub-30ms price/inventory lookups. HMAC-SHA256 signed. Raw SQL, parallel queries. | [realtime-api.md](doc/realtime-api.md) |
 | **Standalone GraphQL** | Run GraphQL only: `go run ./cmd/graphql`. No REST, smaller footprint. | [installation.md](doc/installation.md) |
 | **EAV flattening** | Attributes as keys, stock_item, index_prices. FetchWithAllAttributesFlat. | [eav-products.md](doc/eav-products.md) |
 | **Global cache** | In-memory, concurrent-safe. ~300 req/s. Set `PRODUCT_FLAT_CACHE=off` to bypass. | [cache.md](doc/cache.md) |
@@ -105,6 +107,43 @@ Each product has 50 EAV attributes (20 varchar, 10 int, 10 decimal, 5 text, 5 da
 
 > Tested with SQLite (in-memory). Real MySQL/MariaDB performance will vary depending on disk I/O, indexes, and connection pool settings — but the Go-side processing overhead is minimal.
 
+### Benchmark: Stock Import (MySQL)
+
+Tested on real Magento MySQL database with 1,000 existing products.
+
+| Metric | Value |
+|--------|-------|
+| Products updated | 1,000 |
+| Total time | ~156 ms |
+| **Throughput** | **~6,400 products/sec** |
+| **Throughput** | **~385,000 products/min** |
+
+Stock import uses GORM's batch upsert (`CreateInBatches` with `ON CONFLICT DO UPDATE`) for efficient bulk updates with configurable batch size (default 500).
+
+### Schema Compatibility
+
+GoGento supports both Magento schema variants with **automatic runtime detection**:
+
+| Edition | EAV Link Column | Detection |
+|---------|-----------------|-----------|
+| **Community Edition (CE)** | `entity_id` | Default for SQLite and standard MySQL |
+| **Enterprise Edition (EE)** | `row_id` | Auto-detected from EAV table structure |
+
+**How Detection Works:**
+
+At startup, `DetectSchema(db)` queries `DESCRIBE catalog_product_entity_varchar`:
+- If `row_id` column exists → EE schema, sets `IsEnterprise = true`
+- If `entity_id` column exists → CE schema, sets `IsEnterprise = false`
+
+The `Product` struct contains both fields with `json:"...,omitempty"` tags, so JSON responses only include the relevant ID (zero values are omitted).
+
+```go
+// EAVLinkID() returns the appropriate ID for EAV foreign keys
+product.EAVLinkID()  // Returns RowID for EE, EntityID for CE
+```
+
+**No configuration required** — just connect to your database and GoGento adapts automatically.
+
 ### Usage
 
 ```bash
@@ -120,10 +159,196 @@ curl -X POST http://localhost:8080/api/stock/import \
 
 See [rest-api.md](doc/rest-api.md) for full CSV format, API request/response, and all available flags.
 
+## Realtime Pricing & Inventory API
+
+High-performance, stateless endpoints for real-time price and stock lookups with sub-30ms response times.
+
+### Endpoints
+
+| Endpoint | Description |
+|----------|-------------|
+| `GET /api/realtime/price-inventory?sku=X` | Price + stock (parallel fetch) |
+| `GET /api/realtime/price?sku=X` | Lowest price only |
+| `GET /api/realtime/stock?sku=X&source=default` | Stock quantity only |
+| `GET /api/realtime/tier-prices?sku=X` | All tier prices |
+
+### Features
+
+- **HMAC-SHA256 Authentication** — Stateless, signed requests using Magento's crypt key
+- **Parallel Queries** — Price and inventory fetched concurrently via errgroup
+- **Raw SQL** — Direct `database/sql` queries, no ORM overhead
+- **Lowest Price Logic** — Uses SQL `LEAST()` across base price, special price, and tier price
+- **Auto Schema Detection** — Supports both CE (`entity_id`) and EE (`row_id`)
+
+### PHP Integration
+
+```php
+// Generate HMAC signature
+$signature = hash_hmac('sha256', $customerId, $cryptKey);
+
+// Request with signed headers
+$response = file_get_contents(
+    'http://gogento:8080/api/realtime/price-inventory?sku=SKU-001',
+    false,
+    stream_context_create([
+        'http' => [
+            'header' => "X-Customer-ID: {$customerId}\r\nX-Customer-Sig: {$signature}"
+        ]
+    ])
+);
+```
+
+### JavaScript Integration (Vanilla JS)
+
+```javascript
+// Signature should be generated server-side and passed to frontend
+async function getRealtimePrice(sku, customerId, signature) {
+    const response = await fetch(
+        `https://gogento.example.com/api/realtime/price-inventory?sku=${encodeURIComponent(sku)}`,
+        {
+            method: 'GET',
+            headers: {
+                'X-Customer-ID': customerId,
+                'X-Customer-Sig': signature
+            }
+        }
+    );
+    if (!response.ok) throw new Error(`HTTP ${response.status}`);
+    return response.json();
+}
+
+// Usage
+getRealtimePrice('SKU-001', '42', 'a1b2c3...')
+    .then(data => {
+        document.getElementById('price').textContent = `$${data.price}`;
+        document.getElementById('stock').textContent = data.stock > 0 ? 'In Stock' : 'Out of Stock';
+    });
+```
+
+### React Integration
+
+```jsx
+import { useState, useEffect } from 'react';
+
+function useRealtimePrice(sku, customerId, signature) {
+    const [data, setData] = useState({ price: null, stock: null, loading: true });
+
+    useEffect(() => {
+        if (!sku) return;
+        
+        fetch(`/api/realtime/price-inventory?sku=${encodeURIComponent(sku)}`, {
+            headers: {
+                'X-Customer-ID': customerId,
+                'X-Customer-Sig': signature
+            }
+        })
+        .then(res => res.json())
+        .then(json => setData({ price: json.price, stock: json.stock, loading: false }))
+        .catch(() => setData(prev => ({ ...prev, loading: false })));
+    }, [sku, customerId, signature]);
+
+    return data;
+}
+
+// Usage in component
+function ProductPrice({ sku, customerId, signature }) {
+    const { price, stock, loading } = useRealtimePrice(sku, customerId, signature);
+
+    if (loading) return <span>Loading...</span>;
+
+    return (
+        <div>
+            <span className="price">${price?.toFixed(2)}</span>
+            <span className={stock > 0 ? 'in-stock' : 'out-of-stock'}>
+                {stock > 0 ? `${stock} in stock` : 'Out of stock'}
+            </span>
+        </div>
+    );
+}
+```
+
+### Hyvä Integration (Alpine.js)
+
+```html
+<!-- Hyvä theme component using Alpine.js -->
+<div x-data="realtimePrice('<?= $escaper->escapeJs($block->getSku()) ?>')" 
+     x-init="fetchPrice()">
+    
+    <span x-show="loading">Loading...</span>
+    
+    <template x-if="!loading">
+        <div>
+            <span class="price" x-text="'$' + price?.toFixed(2)"></span>
+            <span :class="stock > 0 ? 'text-green-600' : 'text-red-600'"
+                  x-text="stock > 0 ? stock + ' in stock' : 'Out of stock'">
+            </span>
+        </div>
+    </template>
+</div>
+
+<script>
+function realtimePrice(sku) {
+    return {
+        sku: sku,
+        price: null,
+        stock: null,
+        loading: true,
+        customerId: '<?= $escaper->escapeJs($block->getCustomerId()) ?>',
+        signature: '<?= $escaper->escapeJs($block->getCustomerSignature()) ?>',
+        
+        async fetchPrice() {
+            try {
+                const response = await fetch(
+                    `<?= $escaper->escapeUrl($block->getGoGentoUrl()) ?>/api/realtime/price-inventory?sku=${encodeURIComponent(this.sku)}`,
+                    {
+                        headers: {
+                            'X-Customer-ID': this.customerId,
+                            'X-Customer-Sig': this.signature
+                        }
+                    }
+                );
+                const data = await response.json();
+                this.price = data.price;
+                this.stock = data.stock;
+            } catch (e) {
+                console.error('Realtime price fetch failed:', e);
+            } finally {
+                this.loading = false;
+            }
+        }
+    };
+}
+</script>
+```
+
+```php
+<?php
+// Block class for Hyvä template
+namespace Vendor\Module\Block;
+
+class RealtimePrice extends \Magento\Framework\View\Element\Template
+{
+    public function getCustomerSignature(): string
+    {
+        $customerId = $this->getCustomerId();
+        $cryptKey = $this->_scopeConfig->getValue('system/crypt/key');
+        return hash_hmac('sha256', (string)$customerId, $cryptKey);
+    }
+    
+    public function getGoGentoUrl(): string
+    {
+        return $this->_scopeConfig->getValue('gogento/general/api_url') ?? 'http://gogento:8080';
+    }
+}
+```
+
+See [realtime-api.md](doc/realtime-api.md) for full PHP client class, batch requests, and Magento Observer integration.
+
 ## Performance
 
 - **With cache:** ~300 req/s, ~1 ms single product (ApacheBench)
 - **100 products, 100 attrs:** REST ~25 ms, GraphQL ~30 ms (`make test-perf`)
+- **Realtime API:** < 30ms price + inventory (parallel raw SQL)
 - **Product import:** ~127,000 products/min (100k products, 50 attrs each, raw SQL)
 - No N+1: batch Preload with IN clauses
 

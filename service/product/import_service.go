@@ -187,12 +187,20 @@ func ImportProducts(db *gorm.DB, r io.Reader, opts ImportOptions) (*ImportResult
 	return result, nil
 }
 
-// lookupSKUs batch-queries existing SKUs and returns sku->entity_id map.
+// lookupSKUs batch-queries existing SKUs and returns sku->linkID map.
+// linkID is entity_id for CE, row_id for EE (determined at compile time).
 func lookupSKUs(db *gorm.DB, skus []string, batchSize int) map[string]uint {
 	type skuRow struct {
-		EntityID uint   `gorm:"column:entity_id"`
-		SKU      string `gorm:"column:sku"`
+		LinkID uint   `gorm:"column:link_id"`
+		SKU    string `gorm:"column:sku"`
 	}
+
+	// Select column determined at compile time
+	selectCol := "entity_id as link_id"
+	if productEntity.IsEnterprise {
+		selectCol = "row_id as link_id"
+	}
+
 	var existing []skuRow
 	for i := 0; i < len(skus); i += batchSize {
 		end := i + batchSize
@@ -200,23 +208,30 @@ func lookupSKUs(db *gorm.DB, skus []string, batchSize int) map[string]uint {
 			end = len(skus)
 		}
 		var chunk []skuRow
-		db.Table("catalog_product_entity").Select("entity_id, sku").Where("sku IN ?", skus[i:end]).Find(&chunk)
+		db.Table("catalog_product_entity").Select(selectCol + ", sku").Where("sku IN ?", skus[i:end]).Find(&chunk)
 		existing = append(existing, chunk...)
 	}
 	m := make(map[string]uint, len(existing))
 	for _, e := range existing {
-		m[e.SKU] = e.EntityID
+		m[e.SKU] = e.LinkID
 	}
 	return m
 }
 
+type newProduct struct {
+	sku       string
+	typeID    string
+	attrSetID uint16
+	rowIndex  int
+}
+
 // insertNewEntities creates entity rows for new SKUs and updates skuToID in place.
+// skuToID values are entity_id for standard schema, row_id for staging schema.
 func insertNewEntities(db *gorm.DB, rows [][]string, skuCol int, colIndex map[string]int, skuToID map[string]uint, opts ImportOptions) (created, skipped int) {
 	typeCol, hasType := colIndex["type_id"]
 	attrSetCol, hasAttrSet := colIndex["attribute_set_id"]
 
-	newProducts := make([]productEntity.Product, 0, len(rows))
-	newIndices := make([]int, 0, len(rows))
+	var toCreate []newProduct
 
 	for ri, row := range rows {
 		sku := ""
@@ -230,27 +245,93 @@ func insertNewEntities(db *gorm.DB, rows [][]string, skuCol int, colIndex map[st
 		if _, exists := skuToID[sku]; exists {
 			continue
 		}
-		p := productEntity.Product{SKU: sku, AttributeSetID: opts.AttributeSet, TypeID: "simple"}
+		np := newProduct{sku: sku, typeID: "simple", attrSetID: opts.AttributeSet, rowIndex: ri}
 		if hasType && typeCol < len(row) {
 			if v := strings.TrimSpace(row[typeCol]); v != "" {
-				p.TypeID = v
+				np.typeID = v
 			}
 		}
 		if hasAttrSet && attrSetCol < len(row) {
 			if v, err := strconv.ParseUint(strings.TrimSpace(row[attrSetCol]), 10, 16); err == nil && v > 0 {
-				p.AttributeSetID = uint16(v)
+				np.attrSetID = uint16(v)
 			}
 		}
-		newProducts = append(newProducts, p)
-		newIndices = append(newIndices, ri)
+		toCreate = append(toCreate, np)
 	}
 
-	if len(newProducts) > 0 {
-		db.Session(&gorm.Session{SkipHooks: true, CreateBatchSize: opts.BatchSize}).Create(&newProducts)
-		for i, p := range newProducts {
-			sku := strings.TrimSpace(rows[newIndices[i]][skuCol])
-			skuToID[sku] = p.EntityID
-		}
+	if len(toCreate) == 0 {
+		return 0, skipped
+	}
+
+	// For EE (row_id schema), insert into sequence table first
+	if productEntity.IsEnterprise {
+		return insertProductsRowIDSchema(db, toCreate, skuToID, opts.BatchSize), skipped
+	}
+
+	// CE (entity_id schema) - batch insert
+	newProducts := make([]productEntity.Product, 0, len(toCreate))
+	for _, np := range toCreate {
+		newProducts = append(newProducts, productEntity.Product{
+			SKU: np.sku, AttributeSetID: np.attrSetID, TypeID: np.typeID,
+		})
+	}
+	db.Session(&gorm.Session{SkipHooks: true, CreateBatchSize: opts.BatchSize}).Create(&newProducts)
+	for i, p := range newProducts {
+		skuToID[toCreate[i].sku] = p.EntityID
 	}
 	return len(newProducts), skipped
+}
+
+// insertProductsRowIDSchema handles batch product creation for Magento EE staging schema.
+func insertProductsRowIDSchema(db *gorm.DB, toCreate []newProduct, skuToID map[string]uint, batchSize int) int {
+	if len(toCreate) == 0 {
+		return 0
+	}
+
+	// Process in batches
+	for i := 0; i < len(toCreate); i += batchSize {
+		end := i + batchSize
+		if end > len(toCreate) {
+			end = len(toCreate)
+		}
+		batch := toCreate[i:end]
+
+		// Batch insert into sequence_product
+		var seqBuilder strings.Builder
+		seqBuilder.WriteString("INSERT INTO sequence_product VALUES ")
+		for j := range batch {
+			if j > 0 {
+				seqBuilder.WriteByte(',')
+			}
+			seqBuilder.WriteString("(NULL)")
+		}
+		db.Exec(seqBuilder.String())
+
+		// Get the first generated sequence value
+		var firstSeqID uint
+		db.Raw("SELECT LAST_INSERT_ID()").Scan(&firstSeqID)
+
+		// Batch insert into catalog_product_entity
+		var prodBuilder strings.Builder
+		prodBuilder.WriteString("INSERT INTO catalog_product_entity (entity_id, attribute_set_id, type_id, sku, created_in, updated_in) VALUES ")
+		args := make([]interface{}, 0, len(batch)*4)
+		for j, np := range batch {
+			if j > 0 {
+				prodBuilder.WriteByte(',')
+			}
+			prodBuilder.WriteString("(?,?,?,?,1,2147483647)")
+			args = append(args, firstSeqID+uint(j), np.attrSetID, np.typeID, np.sku)
+		}
+		db.Exec(prodBuilder.String(), args...)
+
+		// Get first generated row_id
+		var firstRowID uint
+		db.Raw("SELECT LAST_INSERT_ID()").Scan(&firstRowID)
+
+		// Map SKUs to row_ids
+		for j, np := range batch {
+			skuToID[np.sku] = firstRowID + uint(j)
+		}
+	}
+	return len(toCreate)
 }

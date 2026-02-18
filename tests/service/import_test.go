@@ -1,6 +1,7 @@
 package servicetest
 
 import (
+	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -968,5 +969,93 @@ func TestImport_AllSubImporters(t *testing.T) {
 	}
 	if res.EAVCounts["price_index"] != 1 {
 		t.Errorf("price_index = %d, want 1", res.EAVCounts["price_index"])
+	}
+}
+
+func TestDetectSchema_SQLite_ReturnsCE(t *testing.T) {
+	db := importDB(t)
+	productService.ResetSchemaDetection()
+
+	schema := productService.DetectSchema(db)
+	if schema != productService.SchemaEntityID {
+		t.Errorf("DetectSchema(sqlite) = %v, want SchemaEntityID", schema)
+	}
+	if productEntity.IsEnterprise {
+		t.Error("IsEnterprise should be false for SQLite/CE schema")
+	}
+}
+
+func TestDetectSchema_EAVLinkColumn(t *testing.T) {
+	tests := []struct {
+		schema productService.SchemaType
+		want   string
+	}{
+		{productService.SchemaEntityID, "entity_id"},
+		{productService.SchemaRowID, "row_id"},
+	}
+	for _, tc := range tests {
+		got := tc.schema.EAVLinkColumn()
+		if got != tc.want {
+			t.Errorf("SchemaType(%d).EAVLinkColumn() = %q, want %q", tc.schema, got, tc.want)
+		}
+	}
+}
+
+func TestProduct_EAVLinkID_CE(t *testing.T) {
+	productEntity.IsEnterprise = false
+	p := &productEntity.Product{EntityID: 100, RowID: 200}
+	if got := p.EAVLinkID(); got != 100 {
+		t.Errorf("EAVLinkID() = %d, want 100 (EntityID)", got)
+	}
+}
+
+func TestProduct_EAVLinkID_EE(t *testing.T) {
+	productEntity.IsEnterprise = true
+	defer func() { productEntity.IsEnterprise = false }()
+
+	p := &productEntity.Product{EntityID: 100, RowID: 200}
+	if got := p.EAVLinkID(); got != 200 {
+		t.Errorf("EAVLinkID() = %d, want 200 (RowID)", got)
+	}
+}
+
+func TestProduct_JSON_OmitEmpty_CE(t *testing.T) {
+	productEntity.IsEnterprise = false
+	p := productEntity.Product{EntityID: 42, SKU: "TEST-SKU"}
+
+	data, err := json.Marshal(p)
+	if err != nil {
+		t.Fatalf("json.Marshal: %v", err)
+	}
+	jsonStr := string(data)
+
+	if !strings.Contains(jsonStr, `"entity_id":42`) {
+		t.Errorf("JSON should contain entity_id:42, got: %s", jsonStr)
+	}
+	if strings.Contains(jsonStr, `"row_id"`) {
+		t.Errorf("JSON should omit row_id when zero, got: %s", jsonStr)
+	}
+	if strings.Contains(jsonStr, `"created_in"`) {
+		t.Errorf("JSON should omit created_in when zero, got: %s", jsonStr)
+	}
+}
+
+func TestProduct_JSON_OmitEmpty_EE(t *testing.T) {
+	productEntity.IsEnterprise = true
+	defer func() { productEntity.IsEnterprise = false }()
+
+	p := productEntity.Product{RowID: 99, SKU: "EE-SKU"}
+
+	data, err := json.Marshal(p)
+	if err != nil {
+		t.Fatalf("json.Marshal: %v", err)
+	}
+	jsonStr := string(data)
+
+	if !strings.Contains(jsonStr, `"row_id":99`) {
+		t.Errorf("JSON should contain row_id:99, got: %s", jsonStr)
+	}
+	if strings.Contains(jsonStr, `"entity_id"`) {
+		t.Errorf("JSON should omit entity_id when zero, got: %s", jsonStr)
 	}
 }
