@@ -2,38 +2,175 @@ package resolvers
 
 import (
 	"context"
+	"encoding/base64"
+	"strconv"
 	"strings"
+
+	categoryEntity "magento.GO/model/entity/category"
 
 	"magento.GO/graphql"
 	gqlmodels "magento.GO/graphql/models"
 )
 
-// MagentoCategories returns categories filtered by uid (Magento GetCategories format).
-func (r *queryResolver) MagentoCategories(ctx context.Context, filters *graphql.MagentoCategoryFilters) (*gqlmodels.CategoryResult, error) {
-	var ids []uint
-	if filters != nil && filters.CategoryUID != nil {
-		if filters.CategoryUID.In != nil {
-			for _, uid := range *filters.CategoryUID.In {
-				if uid != nil && *uid != "" {
-					if id, ok := uidDecode(*uid); ok {
-						ids = append(ids, id)
-					}
+// --- Magento UID helpers ---
+
+func uidEncode(entityID uint) string {
+	return base64.StdEncoding.EncodeToString([]byte(strconv.FormatUint(uint64(entityID), 10)))
+}
+
+func uidDecode(uid string) (uint, bool) {
+	b, err := base64.StdEncoding.DecodeString(uid)
+	if err != nil {
+		return 0, false
+	}
+	n, err := strconv.ParseUint(string(b), 10, 64)
+	if err != nil {
+		return 0, false
+	}
+	return uint(n), true
+}
+
+func flatToMagentoProduct(p map[string]interface{}, baseURL string) *gqlmodels.MagentoProduct {
+	entityID := uint(toUint(p["entity_id"]))
+	sku := ""
+	if s, ok := p["sku"].(string); ok {
+		sku = s
+	}
+	name := ""
+	if n, ok := p["name"].(string); ok {
+		name = n
+	}
+	urlKey := ""
+	if u, ok := p["url_key"].(string); ok {
+		urlKey = u
+	}
+
+	price := 0.0
+	if pr, ok := p["price"].(float64); ok {
+		price = pr
+	}
+	finalPrice := price
+	if fp, ok := p["final_price"].(float64); ok {
+		finalPrice = fp
+	}
+	discount := price - finalPrice
+	if discount < 0 {
+		discount = 0
+	}
+
+	stockStatus := "OUT_OF_STOCK"
+	if si, ok := p["stock_item"].(map[string]interface{}); ok {
+		if inStock, ok := si["is_in_stock"]; ok && toUint(inStock) != 0 {
+			stockStatus = "IN_STOCK"
+		}
+	}
+
+	imgURL := ""
+	if img, ok := p["image"].(string); ok && img != "" {
+		imgURL = img
+	} else if mg, ok := p["media_gallery"].([]map[string]interface{}); ok && len(mg) > 0 {
+		if v, ok := mg[0]["value"].(string); ok && v != "" {
+			if baseURL != "" {
+				imgURL = baseURL + "/media/catalog/product" + v
+			} else {
+				imgURL = v
+			}
+		}
+	}
+
+	mp := &gqlmodels.MagentoProduct{
+		ID:            int32(entityID),
+		UID:           uidEncode(entityID),
+		SKU:           sku,
+		StockStatus:   stockStatus,
+		RatingSummary: 0,
+		PriceRange: gqlmodels.PriceRange{
+			MaximumPrice: gqlmodels.ProductPrice{
+				FinalPrice:   gqlmodels.Money{Currency: "USD", Value: finalPrice},
+				RegularPrice: gqlmodels.Money{Currency: "USD", Value: price},
+			},
+		},
+	}
+	if name != "" {
+		mp.Name = &name
+	}
+	if urlKey != "" {
+		mp.URLKey = &urlKey
+	}
+	if imgURL != "" {
+		mp.SmallImage = &gqlmodels.ProductImage{URL: imgURL}
+	}
+	if discount > 0 {
+		mp.PriceRange.MaximumPrice.Discount = &gqlmodels.ProductDiscount{AmountOff: &discount}
+	}
+	return mp
+}
+
+func categoryToCategoryTree(c *categoryEntity.Category, attrs map[string]map[string]interface{}) *gqlmodels.CategoryTree {
+	ct := &gqlmodels.CategoryTree{
+		UID: uidEncode(c.EntityID),
+	}
+	getStr := func(code string) *string {
+		if a, ok := attrs[code]; ok {
+			if v, ok := a["value"].(string); ok && v != "" {
+				return &v
+			}
+		}
+		return nil
+	}
+	ct.MetaTitle = getStr("meta_title")
+	ct.MetaKeywords = getStr("meta_keywords")
+	ct.MetaDescription = getStr("meta_description")
+	ct.URLPath = getStr("url_path")
+	ct.URLKey = getStr("url_key")
+	if ct.URLKey == nil && ct.URLPath == nil {
+		for _, v := range c.Varchars {
+			if v.Value != "" {
+				switch v.AttributeID {
+				case 119:
+					ct.URLKey = &v.Value
 				}
 			}
 		}
-		if filters.CategoryUID.Eq != nil {
-			if id, ok := uidDecode(*filters.CategoryUID.Eq); ok {
-				ids = append(ids, id)
+	}
+	if ct.URLPath == nil && ct.URLKey != nil {
+		ct.URLPath = ct.URLKey
+	}
+	return ct
+}
+
+func (r *QueryResolver) MagentoCategories(ctx context.Context, args *struct {
+	Filters *graphql.MagentoCategoryFilters
+}) (*gqlmodels.CategoryResult, error) {
+	empty := &gqlmodels.CategoryResult{Items: []*gqlmodels.CategoryTree{}}
+
+	if args == nil || args.Filters == nil || args.Filters.CategoryUID == nil {
+		return empty, nil
+	}
+
+	var ids []uint
+	f := args.Filters.CategoryUID
+	if f.In != nil {
+		for _, uid := range *f.In {
+			if uid != nil && *uid != "" {
+				if id, ok := uidDecode(*uid); ok {
+					ids = append(ids, id)
+				}
 			}
 		}
 	}
+	if f.Eq != nil {
+		if id, ok := uidDecode(*f.Eq); ok {
+			ids = append(ids, id)
+		}
+	}
 	if len(ids) == 0 {
-		return &gqlmodels.CategoryResult{Items: []*gqlmodels.CategoryTree{}}, nil
+		return empty, nil
 	}
 
-	cats, flats, err := r.CategoryRepo.GetByIDsWithAttributesAndFlat(ids, r.StoreID)
+	cats, flats, err := r.categoryRepo().GetByIDsWithAttributesAndFlat(ids, r.storeID(ctx))
 	if err != nil || len(cats) == 0 {
-		return &gqlmodels.CategoryResult{Items: []*gqlmodels.CategoryTree{}}, nil
+		return empty, nil
 	}
 
 	items := make([]*gqlmodels.CategoryTree, len(cats))
@@ -47,16 +184,20 @@ func (r *queryResolver) MagentoCategories(ctx context.Context, filters *graphql.
 	return &gqlmodels.CategoryResult{Items: items}, nil
 }
 
-// MagentoProducts returns products with Magento format (filter by category_uid, sort by position).
-func (r *queryResolver) MagentoProducts(ctx context.Context, args graphql.MagentoProductsArgs) (*gqlmodels.Products, error) {
+func (r *QueryResolver) MagentoProducts(ctx context.Context, args graphql.MagentoProductsArgs) (*gqlmodels.Products, error) {
+	emptyResult := &gqlmodels.Products{Items: []*gqlmodels.MagentoProduct{}, PageInfo: gqlmodels.SearchResultPageInfo{TotalPages: 1}, TotalCount: 0}
+
 	ps := int(args.PageSize)
-	cp := int(args.CurrentPage)
 	if ps <= 0 {
 		ps = 12
 	}
+	cp := int(args.CurrentPage)
 	if cp <= 0 {
 		cp = 1
 	}
+
+	repo := r.productRepo()
+	storeID := r.storeID(ctx)
 
 	var productIDs []uint
 	var categoryID uint
@@ -81,37 +222,37 @@ func (r *queryResolver) MagentoProducts(ctx context.Context, args graphql.Magent
 	}
 
 	if categoryID > 0 {
-		ids, err := r.ProductRepo.FetchProductIDsByCategoryWithPosition(categoryID, asc)
+		ids, err := repo.FetchProductIDsByCategoryWithPosition(categoryID, asc)
 		if err != nil {
-			return &gqlmodels.Products{Items: []*gqlmodels.MagentoProduct{}, PageInfo: gqlmodels.SearchResultPageInfo{TotalPages: 1}, TotalCount: 0}, nil
+			return emptyResult, nil
 		}
 		productIDs = ids
 	} else {
-		flat, err := r.ProductRepo.FetchWithAllAttributesFlat(r.StoreID)
+		flat, err := repo.FetchWithAllAttributesFlat(storeID)
 		if err != nil {
-			return &gqlmodels.Products{Items: []*gqlmodels.MagentoProduct{}, PageInfo: gqlmodels.SearchResultPageInfo{TotalPages: 1}, TotalCount: 0}, nil
+			return emptyResult, nil
 		}
 		for id := range flat {
 			productIDs = append(productIDs, id)
 		}
 	}
 
-	flat, err := r.ProductRepo.FetchWithAllAttributesFlatByIDs(productIDs, r.StoreID)
+	flat, err := repo.FetchWithAllAttributesFlatByIDs(productIDs, storeID)
 	if err != nil {
-		return &gqlmodels.Products{Items: []*gqlmodels.MagentoProduct{}, PageInfo: gqlmodels.SearchResultPageInfo{TotalPages: 1}, TotalCount: 0}, nil
+		return emptyResult, nil
 	}
-	// Preserve order from productIDs
+
 	allItems := make([]map[string]interface{}, 0, len(productIDs))
 	for _, id := range productIDs {
 		if p, ok := flat[id]; ok {
-			allItems = append(allItems, filterPriceForGuest(p, r.CustomerGroupID))
+			allItems = append(allItems, filterPriceForGuest(p, guestGroupID))
 		}
 	}
 
 	total := len(allItems)
 	items := paginate(allItems, cp, ps)
 
-	baseURL := "" // TODO: from config if needed
+	baseURL := ""
 	magentoItems := make([]*gqlmodels.MagentoProduct, len(items))
 	for i, p := range items {
 		magentoItems[i] = flatToMagentoProduct(p, baseURL)
@@ -121,7 +262,6 @@ func (r *queryResolver) MagentoProducts(ctx context.Context, args graphql.Magent
 	if totalPages < 1 {
 		totalPages = 1
 	}
-
 	return &gqlmodels.Products{
 		Items:      magentoItems,
 		PageInfo:   gqlmodels.SearchResultPageInfo{TotalPages: int32(totalPages)},

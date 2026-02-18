@@ -1,5 +1,7 @@
 # Cache & Performance
 
+![Product Cache Flow](images/cache-flow.png)
+
 ## Product Flat Cache
 
 - Global in-memory cache for flattened products

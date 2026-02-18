@@ -1,5 +1,7 @@
 # Extending
 
+![Extension Points](images/extension-points.png)
+
 ## Add New Entity
 
 1. Add GORM model in `model/entity/`

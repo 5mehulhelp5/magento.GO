@@ -6,19 +6,58 @@ import (
 	gqlmodels "magento.GO/graphql/models"
 )
 
-// Products returns paginated product list with guest pricing.
-func (r *queryResolver) Products(ctx context.Context, pageSize *int, currentPage *int, skus []string, categoryID *string) (*gqlmodels.ProductSearchResult, error) {
-	ps := defaultPageSize(pageSize)
-	cp := defaultCurrentPage(currentPage)
+func (r *QueryResolver) Products(ctx context.Context, args struct {
+	PageSize    int32
+	CurrentPage int32
+	Skus       *[]string
+	CategoryID *string
+}) (*gqlmodels.ProductSearchResult, error) {
+	ps := int(args.PageSize)
+	if ps <= 0 {
+		ps = 20
+	}
+	cp := int(args.CurrentPage)
+	if cp <= 0 {
+		cp = 1
+	}
 
-	ids := r.resolveProductIDsBySKUs(skus)
+	repo := r.productRepo()
+	storeID := r.storeID(ctx)
 
-	flat, err := r.fetchProductsFlat(ids)
+	var skus []string
+	if args.Skus != nil {
+		skus = *args.Skus
+	}
+
+	// Resolve IDs by SKU filter
+	var ids []uint
+	if len(skus) > 0 {
+		flat, err := repo.FetchWithAllAttributesFlat(storeID)
+		if err == nil {
+			skuSet := make(map[string]bool, len(skus))
+			for _, s := range skus {
+				skuSet[s] = true
+			}
+			for _, p := range flat {
+				if sku, ok := p["sku"].(string); ok && skuSet[sku] {
+					ids = append(ids, uint(toUint(p["entity_id"])))
+				}
+			}
+		}
+	}
+
+	var flat map[uint]map[string]interface{}
+	var err error
+	if len(ids) > 0 {
+		flat, err = repo.FetchWithAllAttributesFlatByIDs(ids, storeID)
+	} else {
+		flat, err = repo.FetchWithAllAttributesFlat(storeID)
+	}
 	if err != nil {
 		return nil, err
 	}
 
-	allItems := filterProductsForGuest(flat, r.CustomerGroupID)
+	allItems := filterProductsForGuest(flat, guestGroupID)
 	total := len(allItems)
 	items := paginate(allItems, cp, ps)
 	products := make([]*gqlmodels.Product, len(items))
@@ -40,52 +79,25 @@ func (r *queryResolver) Products(ctx context.Context, pageSize *int, currentPage
 	}, nil
 }
 
-// Product returns a single product by SKU or url_key.
-func (r *queryResolver) Product(ctx context.Context, sku *string, urlKey *string) (*gqlmodels.Product, error) {
-	flat, err := r.ProductRepo.FetchWithAllAttributesFlat(r.StoreID)
+func (r *QueryResolver) Product(ctx context.Context, args struct {
+	Sku    *string
+	URLKey *string
+}) (*gqlmodels.Product, error) {
+	flat, err := r.productRepo().FetchWithAllAttributesFlat(r.storeID(ctx))
 	if err != nil {
 		return nil, err
 	}
-
 	for _, p := range flat {
-		if sku != nil {
-			if s, ok := p["sku"].(string); ok && s == *sku {
-				return flatToProduct(filterPriceForGuest(p, r.CustomerGroupID)), nil
+		if args.Sku != nil {
+			if s, ok := p["sku"].(string); ok && s == *args.Sku {
+				return flatToProduct(filterPriceForGuest(p, guestGroupID)), nil
 			}
 		}
-		if urlKey != nil {
-			if u, ok := p["url_key"].(string); ok && u == *urlKey {
-				return flatToProduct(filterPriceForGuest(p, r.CustomerGroupID)), nil
+		if args.URLKey != nil {
+			if u, ok := p["url_key"].(string); ok && u == *args.URLKey {
+				return flatToProduct(filterPriceForGuest(p, guestGroupID)), nil
 			}
 		}
 	}
 	return nil, nil
-}
-
-func (r *queryResolver) resolveProductIDsBySKUs(skus []string) []uint {
-	if len(skus) == 0 {
-		return nil
-	}
-	flat, err := r.ProductRepo.FetchWithAllAttributesFlat(r.StoreID)
-	if err != nil {
-		return nil
-	}
-	skuSet := make(map[string]bool)
-	for _, s := range skus {
-		skuSet[s] = true
-	}
-	var ids []uint
-	for _, p := range flat {
-		if sku, ok := p["sku"].(string); ok && skuSet[sku] {
-			ids = append(ids, uint(toUint(p["entity_id"])))
-		}
-	}
-	return ids
-}
-
-func (r *queryResolver) fetchProductsFlat(ids []uint) (map[uint]map[string]interface{}, error) {
-	if len(ids) > 0 {
-		return r.ProductRepo.FetchWithAllAttributesFlatByIDs(ids, r.StoreID)
-	}
-	return r.ProductRepo.FetchWithAllAttributesFlat(r.StoreID)
 }

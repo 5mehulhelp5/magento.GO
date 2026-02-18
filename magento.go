@@ -17,16 +17,19 @@ import (
 	"github.com/common-nighthawk/go-figure"
 	"github.com/labstack/echo/v4"
 	"github.com/labstack/echo/v4/middleware"
+	"gorm.io/gorm"
 
-	graphqlApi "magento.GO/api/graphql"
 	"magento.GO/api"
-	categoryApi "magento.GO/api/category"
-	productApi "magento.GO/api/product"
-	salesApi "magento.GO/api/sales"
-	corelog "magento.GO/core/log"
-	"magento.GO/core/cache"
-	"magento.GO/core/registry"
+	graphqlApi "magento.GO/api/graphql"
+	_ "magento.GO/api/category"
+	_ "magento.GO/api/product"
+	_ "magento.GO/api/sales"
+	_ "magento.GO/api/stock"
 	"magento.GO/config"
+	"magento.GO/core/auth"
+	"magento.GO/core/cache"
+	corelog "magento.GO/core/log"
+	"magento.GO/core/registry"
 	html "magento.GO/html"
 )
 
@@ -42,37 +45,6 @@ func RegistryMiddleware(next echo.HandlerFunc) echo.HandlerFunc {
 		// Attach to context
 		c.Set("RequestRegistry", reqReg)
 		return next(c)
-	}
-}
-
-func getAuthMiddleware() echo.MiddlewareFunc {
-	skipPaths := config.GetAuthSkipperPaths()
-	skipper := func(c echo.Context) bool {
-		path := c.Path()
-		for _, skip := range skipPaths {
-			if path == skip {
-				return true
-			}
-		}
-		return false
-	}
-	authType := os.Getenv("AUTH_TYPE")
-	switch authType {
-	case "key":
-		apiKey := os.Getenv("API_KEY")
-		return middleware.KeyAuthWithConfig(middleware.KeyAuthConfig{
-			Validator: func(key string, c echo.Context) (bool, error) {
-				return key == apiKey, nil
-			},
-			Skipper: skipper,
-		})
-	default:
-		return middleware.BasicAuthWithConfig(middleware.BasicAuthConfig{
-			Validator: func(username, password string, c echo.Context) (bool, error) {
-				return username == os.Getenv("API_USER") && password == os.Getenv("API_PASS"), nil
-			},
-			Skipper: skipper,
-		})
 	}
 }
 
@@ -190,20 +162,11 @@ func main() {
 	}
 
 	apiGroup := e.Group("/api")
-	apiGroup.Use(getAuthMiddleware())
+	apiGroup.Use(auth.Middleware(db))
+	api.ApplyModules(apiGroup, db)
 
-	salesApi.RegisterSalesOrderGridRoutes(apiGroup, db)
-	productApi.RegisterProductRoutes(apiGroup, db)
-	categoryApi.RegisterCategoryAPI(apiGroup, db)
-
-	// GraphQL catalog API (no auth for now - add to skip paths if needed)
 	graphqlApi.RegisterGraphQLRoutes(e, db)
-	api.Apply(e) // custom routes from registry
-
-	// Not Autorised HTML Routes
-	html.RegisterProductHTMLRoutes(e, db)
-	html.RegisterCategoryHTMLRoutes(e, db)
-	html.RegisterHelloWorldRoute(e)
+	api.ApplyRoutes(e, db)
 
 	fmt.Println(`
 	╔═══════════════════════════════════════════════════════════════════════════════════════╗

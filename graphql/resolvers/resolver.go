@@ -1,38 +1,76 @@
 package resolvers
 
 import (
-	categoryRepo "magento.GO/model/repository/category"
-	productRepo "magento.GO/model/repository/product"
+	"context"
+	"encoding/json"
+
 	"gorm.io/gorm"
 
+	categoryRepo "magento.GO/model/repository/category"
+	productRepo "magento.GO/model/repository/product"
+
 	"magento.GO/graphql"
+	gqlregistry "magento.GO/graphql/registry"
 )
 
-// Resolver holds shared dependencies for all resolvers.
-type Resolver struct {
-	DB              *gorm.DB
-	ProductRepo     *productRepo.ProductRepository
-	CategoryRepo    *categoryRepo.CategoryRepository
-	SearchService   *SearchService
-	StoreID         uint16
-	CustomerGroupID uint // 0 = guest
+func init() {
+	gqlregistry.RegisterQueryResolverFactory(func(db interface{}) interface{} {
+		return &QueryResolver{db: db.(*gorm.DB)}
+	})
 }
 
-// NewResolver creates a resolver with store context.
-func NewResolver(db *gorm.DB, storeID uint16) *Resolver {
-	return &Resolver{
-		DB:              db,
-		ProductRepo:     productRepo.GetProductRepository(db),
-		CategoryRepo:    categoryRepo.GetCategoryRepository(db),
-		SearchService:   GetSearchService(),
-		StoreID:         storeID,
-		CustomerGroupID: 0,
+// QueryResolver is the single resolver for all Query fields.
+// Methods live in product.go, category.go, search.go, magento_resolver.go.
+// New Query fields: use RegisterSchemaExtension + add method on QueryResolver,
+// or use _extension for fully dynamic resolvers.
+type QueryResolver struct {
+	db *gorm.DB
+}
+
+const guestGroupID uint = 0
+
+func (r *QueryResolver) storeID(ctx context.Context) uint16 {
+	return graphql.StoreIDFromContext(ctx)
+}
+
+func (r *QueryResolver) productRepo() *productRepo.ProductRepository {
+	return productRepo.GetProductRepository(r.db)
+}
+
+func (r *QueryResolver) categoryRepo() *categoryRepo.CategoryRepository {
+	return categoryRepo.GetCategoryRepository(r.db)
+}
+
+func (r *QueryResolver) searchService() *SearchService {
+	return GetSearchService()
+}
+
+func paginate(items []map[string]interface{}, currentPage, pageSize int) []map[string]interface{} {
+	start := (currentPage - 1) * pageSize
+	end := start + pageSize
+	if start >= len(items) {
+		return []map[string]interface{}{}
 	}
+	if end > len(items) {
+		end = len(items)
+	}
+	return items[start:end]
 }
 
-// Query returns the query resolver.
-func (r *Resolver) Query() graphql.QueryResolver {
-	return &queryResolver{r}
+// Extension dispatches to registered custom resolvers.
+func (r *QueryResolver) Extension(ctx context.Context, args struct {
+	Name string
+	Args *string
+}) (*string, error) {
+	m := make(map[string]interface{})
+	if args.Args != nil && *args.Args != "" {
+		_ = json.Unmarshal([]byte(*args.Args), &m)
+	}
+	out, err := gqlregistry.Resolve(ctx, args.Name, m)
+	if err != nil {
+		return nil, err
+	}
+	b, _ := json.Marshal(out)
+	s := string(b)
+	return &s, nil
 }
-
-type queryResolver struct{ *Resolver }

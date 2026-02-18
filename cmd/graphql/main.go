@@ -10,6 +10,7 @@ import (
 	"github.com/common-nighthawk/go-figure"
 	"github.com/joho/godotenv"
 	"github.com/labstack/echo/v4"
+	"magento.GO/api"
 	graphqlApi "magento.GO/api/graphql"
 	"magento.GO/config"
 )
@@ -24,6 +25,7 @@ func main() {
 
 	e := echo.New()
 	graphqlApi.RegisterGraphQLRoutes(e, db)
+	api.ApplyRoutes(e, db)
 
 	// ASCII banner on start (random font each run)
 	gqlFonts := []string{"banner", "big", "block", "slant", "standard", "small", "shadow", "speed", "thick", "univers", "doom", "larry3d", "puffy", "rectangles", "bigchief", "cosmic"}

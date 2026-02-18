@@ -7,9 +7,17 @@ import (
 	"time"
 
 	"github.com/labstack/echo/v4"
+	"gorm.io/gorm"
 
+	"magento.GO/api"
 	"magento.GO/core/registry"
 )
+
+func init() {
+	api.RegisterHTMLModule(func(e *echo.Echo, _ *gorm.DB) {
+		RegisterHelloWorldRoute(e)
+	})
+}
 
 var (
 	TemplateCompileTime time.Duration

@@ -1,19 +1,29 @@
 package html
 
 import (
-	"net/http"
-	"strconv"
-	"os"
-	"image"
-	"strings"
 	"encoding/base64"
 	"fmt"
+	"image"
 	"io"
+	"net/http"
+	"os"
 	"path/filepath"
-	"github.com/labstack/echo/v4"
-	"github.com/disintegration/imaging"
+	"strconv"
+	"strings"
+
 	"github.com/chai2010/webp"
+	"github.com/disintegration/imaging"
+	"github.com/labstack/echo/v4"
+	"gorm.io/gorm"
+
+	"magento.GO/api"
 )
+
+func init() {
+	api.RegisterHTMLModule(func(e *echo.Echo, _ *gorm.DB) {
+		RegisterImageRoutes(e)
+	})
+}
 
 // RegisterImageRoutes registers image-related routes such as /image/webp
 func RegisterImageRoutes(e *echo.Echo) {

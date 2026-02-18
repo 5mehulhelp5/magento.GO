@@ -6,48 +6,45 @@ GoGento uses [graph-gophers/graphql-go](https://github.com/graph-gophers/graphql
 
 ## Architecture
 
-```
-┌─────────────────┐     ┌──────────────────┐     ┌─────────────────┐
-│  api/graphql/   │────▶│ graphqlserver/   │────▶│ graphql/        │
-│  HTTP handler   │     │ RootResolver     │     │ resolvers/      │
-│  POST /graphql  │     │ QueryResolver    │     │ (business logic)│
-└─────────────────┘     └──────────────────┘     └────────┬────────┘
-         │                           │                      │
-         │ Store from header/        │                      │
-         │ query/variables          │                      ▼
-         ▼                           │             ┌─────────────────┐
-┌─────────────────┐                   │             │ model/          │
-│ graphql/context │                   │             │ repository/     │
-│ StoreID in ctx  │                   │             │ (DB access)     │
-└─────────────────┘                   │             └─────────────────┘
-                                      │
-                                      ▼
-                             ┌─────────────────┐
-                             │ graphql/models/  │
-                             │ (gqlmodels)     │
-                             │ Response DTOs   │
-                             └─────────────────┘
-```
+![GraphQL Architecture](images/graphql-architecture.png)
 
 ### Layers
 
 | Layer | Path | Role |
 |-------|------|------|
-| **HTTP** | `api/graphql/` | Parses request, extracts Store, calls relay handler |
-| **Schema** | `graphql/schema.graphqls` | GraphQL types and Query definition |
-| **Server** | `graphqlserver/` | Parses schema, wires RootResolver → QueryResolver |
-| **Registry** | `graphql/registry/` | Dynamic resolver registration for `_extension` |
-| **Resolvers** | `graphql/resolvers/` | Fetches data, maps to gqlmodels |
-| **Models** | `graphql/models/` | Response DTOs (import as `gqlmodels`) |
+| **HTTP** | `api/graphql/graphql_api.go` | Parses request, extracts Store, wires rootResolver, relay handler |
+| **Schema** | `graphql/schema.graphqls` | GraphQL types and Query definition (extensible via `RegisterSchemaExtension`) |
+| **Schema + Args** | `graphql/schema.go` | Embeds schema, extensions, and shared arg types |
+| **Registry** | `graphql/registry/` | Dynamic resolver registration for `_extension` + QueryResolverFactory |
+| **Resolvers** | `graphql/resolvers/` | QueryResolver methods — fetches data, maps to gqlmodels |
+| **Models** | `graphql/models/models.go` | All response DTOs (import as `gqlmodels`) |
 | **Custom** | `custom/` | Packages that register via `gqlregistry.Register` in `init()` |
 | **Repository** | `model/repository/` | DB access |
+
+### File Map
+
+```
+api/graphql/graphql_api.go          # HTTP routes, rootResolver, store middleware
+graphql/schema.graphqls             # GraphQL SDL
+graphql/schema.go                   # Embeds schema + extensions + arg types
+graphql/context.go                  # StoreID context helpers
+graphql/registry/registry.go        # _extension registry + QueryResolverFactory
+graphql/models/models.go            # All DTOs (Product, Category, Magento types)
+graphql/resolvers/resolver.go       # QueryResolver struct, init(), helpers, Extension
+graphql/resolvers/product.go        # Products / Product resolvers
+graphql/resolvers/product_mapper.go # flatToProduct, decode hooks
+graphql/resolvers/category.go       # Category resolvers + mappers
+graphql/resolvers/search.go         # Search resolver (Elasticsearch)
+graphql/resolvers/magento_resolver.go # Magento-compat resolvers + helpers
+```
 
 ## Conventions
 
 1. **Import alias:** Use `gqlmodels "magento.GO/graphql/models"` to distinguish from domain models.
-2. **Store context:** Resolvers get `StoreID` via `graphql.StoreIDFromContext(ctx)`.
-3. **Resolver pattern:** `graphqlserver.QueryResolver` delegates to `resolvers.QueryResolver` (created per request with store).
-4. **Naming:** Schema fields use `camelCase`; Go structs use `PascalCase`; graphql-go maps automatically.
+2. **Store context:** Resolvers get `StoreID` via `r.storeID(ctx)` (calls `graphql.StoreIDFromContext`).
+3. **Resolver pattern:** All Query methods live directly on `QueryResolver` — no delegation layers.
+4. **Dependencies:** `QueryResolver` holds `*gorm.DB`; access repos via `r.productRepo()`, `r.categoryRepo()`.
+5. **Naming:** Schema fields use `camelCase`; Go structs use `PascalCase`; graphql-go maps automatically.
 
 ## How to Add a New GraphQL Endpoint
 
@@ -62,27 +59,21 @@ type Query {
 }
 ```
 
-#### 2. Resolver — `graphql/resolvers/featured.go`
+#### 2. Resolver — `graphql/resolvers/product.go` (or new file)
 
 ```go
-package resolvers
-
-import (
-	"context"
-
-	gqlmodels "magento.GO/graphql/models"
-)
-
-func (r *queryResolver) FeaturedProducts(ctx context.Context, limit *int) ([]*gqlmodels.Product, error) {
+func (r *QueryResolver) FeaturedProducts(ctx context.Context, args struct {
+	Limit *int32
+}) ([]*gqlmodels.Product, error) {
 	n := 5
-	if limit != nil && *limit > 0 {
-		n = *limit
+	if args.Limit != nil && *args.Limit > 0 {
+		n = int(*args.Limit)
 	}
-	flat, err := r.ProductRepo.FetchWithAllAttributesFlat(r.StoreID)
+	flat, err := r.productRepo().FetchWithAllAttributesFlat(r.storeID(ctx))
 	if err != nil {
 		return nil, err
 	}
-	items := filterProductsForGuest(flat, r.CustomerGroupID)
+	items := filterProductsForGuest(flat, guestGroupID)
 	if len(items) > n {
 		items = items[:n]
 	}
@@ -94,33 +85,7 @@ func (r *queryResolver) FeaturedProducts(ctx context.Context, limit *int) ([]*gq
 }
 ```
 
-#### 3. Interface — `graphql/query_resolver.go`
-
-```go
-type QueryResolver interface {
-	// ... existing methods ...
-	FeaturedProducts(ctx context.Context, limit *int) ([]*gqlmodels.Product, error)
-}
-```
-
-#### 4. Server — `graphqlserver/server.go`
-
-```go
-func (r *QueryResolver) FeaturedProducts(ctx context.Context, args struct {
-	Limit *int32
-}) ([]*gqlmodels.Product, error) {
-	storeID := graphql.StoreIDFromContext(ctx)
-	res := resolvers.NewResolver(r.db, storeID)
-	var limit *int
-	if args.Limit != nil {
-		l := int(*args.Limit)
-		limit = &l
-	}
-	return res.Query().FeaturedProducts(ctx, limit)
-}
-```
-
-#### 5. Mock (for tests) — `tests/graphql/mock_resolvers.go`
+#### 3. Mock (for tests) — `tests/graphql/mock_resolvers.go`
 
 ```go
 func (m *MockQueryResolver) FeaturedProducts(ctx context.Context, args struct {
@@ -132,7 +97,7 @@ func (m *MockQueryResolver) FeaturedProducts(ctx context.Context, args struct {
 }
 ```
 
-#### 6. Test
+#### 4. Test
 
 ```bash
 curl -X POST http://localhost:8080/graphql \
@@ -140,6 +105,12 @@ curl -X POST http://localhost:8080/graphql \
   -H "Store: 1" \
   -d '{"query":"query { featuredProducts(limit: 3) { sku name } }"}'
 ```
+
+That's it — 2 steps (schema + method). No interfaces, no server wiring, no factories.
+
+## Request Flow
+
+![GraphQL Request Flow](images/graphql-request-flow.png)
 
 ## Store Resolution
 
@@ -149,11 +120,12 @@ Store ID is resolved in order:
 2. **Query param:** `?__Store=1`
 3. **Variables:** `{"variables": {"__Store": "1"}}`
 
-## Custom Extensions
+## Extensible Resolvers (No Core Changes)
 
-Add packages under `custom/` that call `gqlregistry.Register(name, resolve)` in `init()`. They are loaded via blank import in `api/graphql`. Use alias `gqlregistry "magento.GO/graphql/registry"`.
+Add new GraphQL resolvers **without modifying core** via `_extension` and the registry.
 
-**Example** — `custom/example.go`:
+1. **Register** your resolver in `init()` (e.g. in `custom/`):
+2. **Call** it via `_extension(name: "yourName", args: "{}")`
 
 ```go
 package custom
@@ -177,7 +149,25 @@ func init() {
 query { _extension(name: "ping", args: "{}") }
 ```
 
-Returns JSON string. `args` is optional; pass `"{}"` or omit for no arguments.
+Returns JSON string. `args` is optional; pass `"{}"` or omit for no arguments. Add packages under `custom/` and import `_ "magento.GO/custom"` in `api/graphql`.
+
+## Extensible Schema
+
+The schema is built from `graphql/schema.graphqls` plus registered extensions. Custom packages can add Query fields:
+
+```go
+import "magento.GO/graphql"
+
+func init() {
+	graphql.RegisterSchemaExtension(`
+		extend type Query {
+			featuredProducts(limit: Int = 5): [Product!]!
+		}
+	`)
+}
+```
+
+You must also add a matching method on `QueryResolver`. The base schema is the single source of truth; extensions append to it.
 
 ## Available Queries
 
@@ -197,13 +187,16 @@ Returns JSON string. `args` is optional; pass `"{}"` or omit for no arguments.
 
 Same pattern as GraphQL extensions: add packages under `custom/` that call registry `Register` in `init()`.
 
-| Registry | Package | Usage |
-|----------|---------|-------|
-| **Commands** | `cmd` | `cmd.Register(&cobra.Command{...})` |
-| **Cron jobs** | `cron` | `cron.Register("name", "@every 1h", func(args ...string){...})` |
-| **HTTP routes** | `api` | `api.RegisterGET("/path", handler)` or `api.Register(method, path, handler)` |
+| Registry | Key | Register | Apply |
+|----------|-----|----------|-------|
+| **Commands** | `registry:cmd` | `cmd.Register(&cobra.Command{...})` | — |
+| **Cron jobs** | `registry:cron` | `cron.Register("name", "@every 1h", fn)` | — |
+| **API modules** (`/api/*`, auth) | `registry:api` | `api.RegisterModule(func(g, db))` | `api.ApplyModules(apiGroup, db)` |
+| **Root routes** (public) | `registry:routes` | `api.RegisterRoute(func(e, db))` | `api.ApplyRoutes(e, db)` |
 
-Import `_ "magento.GO/custom"` in `cli.go` (for cmd/cron) and in `api/graphql` (for routes, via custom). Example: `custom/example.go`.
+Shorthands for root routes: `api.RegisterGET("/path", handler)`, `api.RegisterHTMLModule(fn)`.
+
+Import `_ "magento.GO/custom"` in `cli.go` (for cmd/cron) and in `api/graphql` (for routes, via custom). API packages self-register via `init()` — see `api/product/`, `api/category/`, `api/sales/`, `html/`.
 
 ## References
 

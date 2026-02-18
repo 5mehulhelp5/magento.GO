@@ -14,7 +14,7 @@ import (
 
 func TestCustomRoute_Ping(t *testing.T) {
 	e := echo.New()
-	api.Apply(e)
+	api.ApplyRoutes(e, nil)
 
 	req := httptest.NewRequest(http.MethodGet, "/custom/ping", nil)
 	rec := httptest.NewRecorder()

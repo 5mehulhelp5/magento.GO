@@ -2,6 +2,8 @@
 
 Product attributes (EAV) are fetched and flattened for API responses.
 
+![EAV Attribute Flattening](images/eav-flattening.png)
+
 ## Repository Methods
 
 - `FetchWithAllAttributes(storeID)` — products with EAV preloaded (Varchars, Ints, Decimals, Texts, Datetimes)

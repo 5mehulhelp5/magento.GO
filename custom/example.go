@@ -33,6 +33,11 @@ func init() {
 		fmt.Println("Custom cron: ping at", args)
 	})
 
+	// Health check
+	api.RegisterGET("/health", func(c echo.Context) error {
+		return c.JSON(200, map[string]string{"status": "ok"})
+	})
+
 	// HTTP route
 	api.RegisterGET("/custom/ping", func(c echo.Context) error {
 		return c.JSON(200, map[string]string{"pong": "ok"})

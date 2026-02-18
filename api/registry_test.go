@@ -14,7 +14,7 @@ func TestRegistry_Register_Apply(t *testing.T) {
 	})
 
 	e := echo.New()
-	Apply(e)
+	ApplyRoutes(e, nil)
 
 	req := httptest.NewRequest(http.MethodGet, "/test/registry/check", nil)
 	rec := httptest.NewRecorder()

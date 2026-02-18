@@ -56,13 +56,25 @@ func NewSearchService() *SearchService {
 	}
 }
 
-// Search (resolver) delegates to SearchService.
-func (r *queryResolver) Search(ctx context.Context, query string, pageSize *int, currentPage *int, categoryID *string) (*gqlmodels.ProductSearchResult, error) {
-	return r.SearchService.Search(ctx, r.StoreID, query, pageSize, currentPage, categoryID, r.ProductRepo, r.CustomerGroupID)
+func (r *QueryResolver) Search(ctx context.Context, args struct {
+	Query       string
+	PageSize    int32
+	CurrentPage int32
+	CategoryID  *string
+}) (*gqlmodels.ProductSearchResult, error) {
+	ps := int(args.PageSize)
+	if ps <= 0 {
+		ps = 20
+	}
+	cp := int(args.CurrentPage)
+	if cp <= 0 {
+		cp = 1
+	}
+	return r.searchService().search(ctx, r.storeID(ctx), args.Query, &ps, &cp, args.CategoryID, r.productRepo(), guestGroupID)
 }
 
-// Search queries Magento Elasticsearch index: magento2_catalog_product_{storeID}
-func (s *SearchService) Search(
+// search queries Magento Elasticsearch index: magento2_catalog_product_{storeID}
+func (s *SearchService) search(
 	ctx context.Context,
 	storeID uint16,
 	query string,

@@ -7,14 +7,24 @@ import (
 	"net/http"
 	"strconv"
 
-	"github.com/graph-gophers/graphql-go"
+	gql "github.com/graph-gophers/graphql-go"
+	"github.com/graph-gophers/graphql-go/relay"
 	"github.com/labstack/echo/v4"
 	"gorm.io/gorm"
 
 	_ "magento.GO/custom"
 	graphqlpkg "magento.GO/graphql"
-	"magento.GO/graphqlserver"
+	gqlregistry "magento.GO/graphql/registry"
+	_ "magento.GO/graphql/resolvers"
 )
+
+type rootResolver struct {
+	db *gorm.DB
+}
+
+func (r *rootResolver) Query() interface{} {
+	return gqlregistry.GetQueryResolver(r.db)
+}
 
 // GraphQLRequest is the standard GraphQL request body
 type GraphQLRequest struct {
@@ -34,7 +44,7 @@ type GraphQLError struct {
 }
 
 func RegisterGraphQLRoutes(e *echo.Echo, db *gorm.DB) {
-	schema, err := graphqlserver.NewSchema(db)
+	schema, err := gql.ParseSchema(graphqlpkg.Schema(), &rootResolver{db: db}, gql.UseFieldResolvers())
 	if err != nil {
 		panic("graphql schema: " + err.Error())
 	}
@@ -42,12 +52,12 @@ func RegisterGraphQLRoutes(e *echo.Echo, db *gorm.DB) {
 }
 
 // RegisterGraphQLRoutesWithSchema registers /graphql with a custom schema (for tests with mocks).
-func RegisterGraphQLRoutesWithSchema(e *echo.Echo, schema *graphql.Schema) {
+func RegisterGraphQLRoutesWithSchema(e *echo.Echo, schema *gql.Schema) {
 	registerRoutes(e, schema)
 }
 
-func registerRoutes(e *echo.Echo, schema *graphql.Schema) {
-	handler := graphqlserver.Handler(schema)
+func registerRoutes(e *echo.Echo, schema *gql.Schema) {
+	handler := &relay.Handler{Schema: schema}
 	h := storeContextMiddleware(handler)
 	e.POST("/graphql", echo.WrapHandler(h))
 	e.GET("/graphql", echo.WrapHandler(h))

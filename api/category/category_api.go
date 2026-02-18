@@ -2,13 +2,20 @@ package category
 
 import (
 	"net/http"
-	"github.com/labstack/echo/v4"
-	repo "magento.GO/model/repository/category"
-	"gorm.io/gorm"
 	"strconv"
-	categoryEntity "magento.GO/model/entity/category"
 	"strings"
+
+	"github.com/labstack/echo/v4"
+	"gorm.io/gorm"
+
+	"magento.GO/api"
+	categoryEntity "magento.GO/model/entity/category"
+	repo "magento.GO/model/repository/category"
 )
+
+func init() {
+	api.RegisterModule(RegisterCategoryAPI)
+}
 
 type CategoryWithAttributes struct {
 	categoryEntity.Category

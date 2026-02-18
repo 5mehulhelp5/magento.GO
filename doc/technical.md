@@ -35,6 +35,8 @@ magento.GO/
 
 ## Architecture
 
+![Package Architecture](images/package-architecture.png)
+
 - **Entity** (`model/entity/`): GORM structs
 - **Repository** (`model/repository/`): CRUD, queries
 - **Service** (`service/`): Business logic

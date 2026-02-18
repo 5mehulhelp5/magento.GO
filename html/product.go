@@ -1,21 +1,23 @@
 package html
 
 import (
+	"bytes"
+	"html/template"
+	"log"
 	"net/http"
 	"strconv"
+	"strings"
+	"sync"
+	"time"
+
 	"github.com/labstack/echo/v4"
 	"gorm.io/gorm"
-	productRepo "magento.GO/model/repository/product"
-	"html/template"
-	parts "magento.GO/html/parts"
-	//"io"
-	"log"
+
+	"magento.GO/api"
 	"magento.GO/config"
-	"strings"
+	parts "magento.GO/html/parts"
 	categoryRepo "magento.GO/model/repository/category"
-	"sync"
-	"bytes"
-	"time"
+	productRepo "magento.GO/model/repository/product"
 )
 
 var (
@@ -123,6 +125,10 @@ func getLastCategoryID(idsVal interface{}) (uint, bool) {
 		}
 	}
 	return 0, false
+}
+
+func init() {
+	api.RegisterHTMLModule(RegisterProductHTMLRoutes)
 }
 
 // RegisterProductHTMLRoutes registers HTML routes for product rendering

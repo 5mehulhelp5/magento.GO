@@ -122,7 +122,7 @@ func (m *MockQueryResolver) Extension(ctx context.Context, args mockExtensionArg
 
 // NewMockSchema creates a schema with mock resolvers for tests.
 func NewMockSchema() *gql.Schema {
-	schema, err := gql.ParseSchema(graphql.Schema, &MockRootResolver{}, gql.UseFieldResolvers())
+	schema, err := gql.ParseSchema(graphql.Schema(), &MockRootResolver{}, gql.UseFieldResolvers())
 	if err != nil {
 		panic("mock schema: " + err.Error())
 	}

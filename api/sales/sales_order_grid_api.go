@@ -3,17 +3,20 @@ package sales
 import (
 	"encoding/json"
 	"net/http"
-	//"os"
 	"strconv"
 	"time"
 
 	"github.com/labstack/echo/v4"
-	//"github.com/labstack/echo/v4/middleware"
 	"gorm.io/gorm"
 
-	"magento.GO/model/entity/sales"
+	"magento.GO/api"
 	"magento.GO/config"
+	"magento.GO/model/entity/sales"
 )
+
+func init() {
+	api.RegisterModule(RegisterSalesOrderGridRoutes)
+}
 
 // RegisterSalesOrderGridRoutes registers the routes for SalesOrderGrid CRUD operations with basic auth
 func RegisterSalesOrderGridRoutes(api *echo.Group, db *gorm.DB) {

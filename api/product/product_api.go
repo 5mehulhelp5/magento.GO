@@ -2,18 +2,21 @@ package product
 
 import (
 	"net/http"
-	//"os"
 	"strconv"
-	"time"
 	"strings"
+	"time"
 
 	"github.com/labstack/echo/v4"
-	//"github.com/labstack/echo/v4/middleware"
 	"gorm.io/gorm"
 
+	"magento.GO/api"
 	productRepository "magento.GO/model/repository/product"
 	productService "magento.GO/service/product"
 )
+
+func init() {
+	api.RegisterModule(RegisterProductRoutes)
+}
 
 // Handler for /flat and /full endpoints
 func flatProductsHandler(repo *productRepository.ProductRepository) echo.HandlerFunc {

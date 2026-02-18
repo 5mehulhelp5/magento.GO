@@ -97,3 +97,69 @@ func TestSalesOrderGridRepository_CreateAndFindByID(t *testing.T) {
 		t.Errorf("IncrementID = %q, want 000000001", found.IncrementID)
 	}
 }
+
+func TestSalesOrderGridRepository_FindAll(t *testing.T) {
+	db := testDB(t)
+	repo := salesRepo.NewSalesOrderGridRepository(db)
+
+	all, err := repo.FindAll()
+	if err != nil {
+		t.Fatalf("FindAll empty: %v", err)
+	}
+	if len(all) != 0 {
+		t.Errorf("expected 0, got %d", len(all))
+	}
+
+	_ = repo.Create(&salesEntity.SalesOrderGrid{EntityID: 1, Status: "pending", IncrementID: "100000001"})
+	_ = repo.Create(&salesEntity.SalesOrderGrid{EntityID: 2, Status: "complete", IncrementID: "100000002"})
+
+	all, err = repo.FindAll()
+	if err != nil {
+		t.Fatalf("FindAll: %v", err)
+	}
+	if len(all) != 2 {
+		t.Errorf("expected 2, got %d", len(all))
+	}
+}
+
+func TestSalesOrderGridRepository_Update(t *testing.T) {
+	db := testDB(t)
+	repo := salesRepo.NewSalesOrderGridRepository(db)
+
+	order := &salesEntity.SalesOrderGrid{EntityID: 1, Status: "pending", IncrementID: "100000001"}
+	if err := repo.Create(order); err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+
+	order.Status = "complete"
+	if err := repo.Update(order); err != nil {
+		t.Fatalf("Update: %v", err)
+	}
+
+	found, err := repo.FindByID(order.EntityID)
+	if err != nil {
+		t.Fatalf("FindByID: %v", err)
+	}
+	if found.Status != "complete" {
+		t.Errorf("Status = %q, want complete", found.Status)
+	}
+}
+
+func TestSalesOrderGridRepository_Delete(t *testing.T) {
+	db := testDB(t)
+	repo := salesRepo.NewSalesOrderGridRepository(db)
+
+	order := &salesEntity.SalesOrderGrid{EntityID: 1, Status: "pending", IncrementID: "100000001"}
+	if err := repo.Create(order); err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+
+	if err := repo.Delete(order.EntityID); err != nil {
+		t.Fatalf("Delete: %v", err)
+	}
+
+	_, err := repo.FindByID(order.EntityID)
+	if err != gorm.ErrRecordNotFound {
+		t.Errorf("after Delete: err = %v, want ErrRecordNotFound", err)
+	}
+}

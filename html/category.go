@@ -1,19 +1,26 @@
 package html
 
 import (
-	"net/http"
-	"strconv"
-	"github.com/labstack/echo/v4"
-	"gorm.io/gorm"
-	categoryRepo "magento.GO/model/repository/category"
+	"fmt"
 	"html/template"
 	"log"
-	parts "magento.GO/html/parts"
-	productRepo "magento.GO/model/repository/product"
-	"magento.GO/config"
+	"net/http"
+	"strconv"
 	"time"
-	"fmt"
+
+	"github.com/labstack/echo/v4"
+	"gorm.io/gorm"
+
+	"magento.GO/api"
+	"magento.GO/config"
+	parts "magento.GO/html/parts"
+	categoryRepo "magento.GO/model/repository/category"
+	productRepo "magento.GO/model/repository/product"
 )
+
+func init() {
+	api.RegisterHTMLModule(RegisterCategoryHTMLRoutes)
+}
 
 // PaginationData holds all pagination-related information
 type PaginationData struct {

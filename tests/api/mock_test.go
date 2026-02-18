@@ -13,8 +13,8 @@ import (
 )
 
 func TestMockRoute_Health(t *testing.T) {
-	registry.GlobalRegistry.UnlockForTesting(registry.KeyRegistryAPI)
-	defer registry.GlobalRegistry.Lock(registry.KeyRegistryAPI)
+	registry.GlobalRegistry.UnlockForTesting(registry.KeyRegistryRoutes)
+	defer registry.GlobalRegistry.Lock(registry.KeyRegistryRoutes)
 
 	api.RegisterGET("/mock/health", func(c echo.Context) error {
 		return c.JSON(http.StatusOK, map[string]interface{}{
@@ -24,7 +24,7 @@ func TestMockRoute_Health(t *testing.T) {
 	})
 
 	e := echo.New()
-	api.Apply(e)
+	api.ApplyRoutes(e, nil)
 
 	req := httptest.NewRequest(http.MethodGet, "/mock/health", nil)
 	rec := httptest.NewRecorder()
@@ -46,8 +46,8 @@ func TestMockRoute_Health(t *testing.T) {
 }
 
 func TestMockRoute_Products(t *testing.T) {
-	registry.GlobalRegistry.UnlockForTesting(registry.KeyRegistryAPI)
-	defer registry.GlobalRegistry.Lock(registry.KeyRegistryAPI)
+	registry.GlobalRegistry.UnlockForTesting(registry.KeyRegistryRoutes)
+	defer registry.GlobalRegistry.Lock(registry.KeyRegistryRoutes)
 
 	mockProducts := []map[string]interface{}{
 		{"id": 1, "sku": "MOCK-SKU-1", "name": "Mock Product 1"},
@@ -61,7 +61,7 @@ func TestMockRoute_Products(t *testing.T) {
 	})
 
 	e := echo.New()
-	api.Apply(e)
+	api.ApplyRoutes(e, nil)
 
 	req := httptest.NewRequest(http.MethodGet, "/mock/products", nil)
 	rec := httptest.NewRecorder()
@@ -85,7 +85,7 @@ func TestMockRoute_Products(t *testing.T) {
 
 func TestMockRoute_NotFound(t *testing.T) {
 	e := echo.New()
-	api.Apply(e)
+	api.ApplyRoutes(e, nil)
 
 	req := httptest.NewRequest(http.MethodGet, "/nonexistent/route", nil)
 	rec := httptest.NewRecorder()

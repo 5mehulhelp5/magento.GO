@@ -12,8 +12,27 @@ import (
 // ResolverFunc is the signature for custom resolvers. Args is JSON-decoded map.
 type ResolverFunc func(ctx context.Context, args map[string]interface{}) (interface{}, error)
 
+// QueryResolverFactory creates the Query resolver for graphql-go. Call from init().
+type QueryResolverFactory func(db interface{}) interface{}
+
 var mu sync.Mutex
 var graphqlLocked int32
+var queryResolverFactory QueryResolverFactory
+
+// RegisterQueryResolverFactory sets the factory for the main Query resolver.
+func RegisterQueryResolverFactory(fn QueryResolverFactory) {
+	mu.Lock()
+	defer mu.Unlock()
+	queryResolverFactory = fn
+}
+
+// GetQueryResolver returns the Query resolver. Panics if not registered.
+func GetQueryResolver(db interface{}) interface{} {
+	if queryResolverFactory == nil {
+		panic("graphql/registry: QueryResolverFactory not registered")
+	}
+	return queryResolverFactory(db)
+}
 
 func getEntries() map[string]ResolverFunc {
 	if v, ok := registry.GlobalRegistry.GetGlobal(registry.KeyRegistryGraphQL); ok && v != nil {
