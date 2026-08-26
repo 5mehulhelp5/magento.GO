@@ -86,5 +86,7 @@ func flushGallery(db *gorm.DB, d *galleryData, opts ImportOptions) error {
 	if len(d.rows) == 0 {
 		return nil
 	}
-	return db.CreateInBatches(d.rows, opts.BatchSize).Error
+	return db.Transaction(func(tx *gorm.DB) error {
+		return tx.CreateInBatches(d.rows, opts.BatchSize).Error
+	})
 }

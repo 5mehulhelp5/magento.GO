@@ -274,45 +274,54 @@ func flushEAVGorm(db *gorm.DB, d *eavData, batchSize int) error {
 }
 
 func rawBatchUpsert(db *gorm.DB, table string, rows []eavRow, batchSize int, linkColumn string, dialect string) error {
-	for i := 0; i < len(rows); i += batchSize {
-		end := i + batchSize
-		if end > len(rows) {
-			end = len(rows)
-		}
-		chunk := rows[i:end]
-
-		var b strings.Builder
-		b.Grow(len(chunk) * 60)
-		b.WriteString("INSERT INTO ")
-		b.WriteString(table)
-		b.WriteString(" (")
-		b.WriteString(linkColumn)
-		b.WriteString(", attribute_id, store_id, value) VALUES ")
-
-		args := make([]interface{}, 0, len(chunk)*4)
-		for j, r := range chunk {
-			if j > 0 {
-				b.WriteByte(',')
-			}
-			b.WriteString("(?,?,?,?)")
-			args = append(args, r.LinkID, r.AttributeID, r.StoreID, r.Value)
-		}
-
-		// Use appropriate upsert syntax based on dialect
-		if dialect == "mysql" {
-			b.WriteString(" ON DUPLICATE KEY UPDATE value=VALUES(value)")
-		} else {
-			// SQLite syntax
-			b.WriteString(" ON CONFLICT(")
-			b.WriteString(linkColumn)
-			b.WriteString(", attribute_id, store_id) DO UPDATE SET value=excluded.value")
-		}
-
-		if err := db.Exec(b.String(), args...).Error; err != nil {
-			return err
-		}
+	if len(rows) == 0 {
+		return nil
 	}
-	return nil
+	// One transaction per table rather than letting each chunk auto-commit
+	// as its own statement -- this function only ever runs inside its own
+	// goroutine (see flushEAVRaw), so a single *gorm.DB transaction here is
+	// not shared across goroutines.
+	return db.Transaction(func(tx *gorm.DB) error {
+		for i := 0; i < len(rows); i += batchSize {
+			end := i + batchSize
+			if end > len(rows) {
+				end = len(rows)
+			}
+			chunk := rows[i:end]
+
+			var b strings.Builder
+			b.Grow(len(chunk) * 60)
+			b.WriteString("INSERT INTO ")
+			b.WriteString(table)
+			b.WriteString(" (")
+			b.WriteString(linkColumn)
+			b.WriteString(", attribute_id, store_id, value) VALUES ")
+
+			args := make([]interface{}, 0, len(chunk)*4)
+			for j, r := range chunk {
+				if j > 0 {
+					b.WriteByte(',')
+				}
+				b.WriteString("(?,?,?,?)")
+				args = append(args, r.LinkID, r.AttributeID, r.StoreID, r.Value)
+			}
+
+			// Use appropriate upsert syntax based on dialect
+			if dialect == "mysql" {
+				b.WriteString(" ON DUPLICATE KEY UPDATE value=VALUES(value)")
+			} else {
+				// SQLite syntax
+				b.WriteString(" ON CONFLICT(")
+				b.WriteString(linkColumn)
+				b.WriteString(", attribute_id, store_id) DO UPDATE SET value=excluded.value")
+			}
+
+			if err := tx.Exec(b.String(), args...).Error; err != nil {
+				return err
+			}
+		}
+		return nil
+	})
 }
 
 // detectDialect returns "mysql" or "sqlite" based on DB driver

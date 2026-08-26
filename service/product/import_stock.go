@@ -138,7 +138,12 @@ func flushStock(db *gorm.DB, d *stockData, opts ImportOptions) error {
 		Columns:   []clause.Column{{Name: "product_id"}, {Name: "stock_id"}},
 		DoUpdates: clause.AssignmentColumns([]string{"qty", "is_in_stock", "manage_stock", "min_qty", "min_sale_qty", "max_sale_qty"}),
 	}
-	return db.Clauses(upsert).CreateInBatches(d.rows, opts.BatchSize).Error
+	// One transaction for all batches instead of one auto-committed (or,
+	// under GORM's default per-statement transaction, one implicitly
+	// committed) statement per batch.
+	return db.Transaction(func(tx *gorm.DB) error {
+		return tx.Clauses(upsert).CreateInBatches(d.rows, opts.BatchSize).Error
+	})
 }
 
 // StockItemInput is the JSON input for the stock import API.

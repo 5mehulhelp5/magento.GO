@@ -130,5 +130,10 @@ func flushPrice(db *gorm.DB, d *priceData, opts ImportOptions) error {
 		Columns:   []clause.Column{{Name: "entity_id"}, {Name: "customer_group_id"}, {Name: "website_id"}},
 		DoUpdates: clause.AssignmentColumns([]string{"price", "final_price", "min_price", "max_price", "tier_price"}),
 	}
-	return db.Clauses(upsert).CreateInBatches(d.rows, opts.BatchSize).Error
+	// One transaction for all batches instead of one auto-committed (or,
+	// under GORM's default per-statement transaction, one implicitly
+	// committed) statement per batch.
+	return db.Transaction(func(tx *gorm.DB) error {
+		return tx.Clauses(upsert).CreateInBatches(d.rows, opts.BatchSize).Error
+	})
 }
