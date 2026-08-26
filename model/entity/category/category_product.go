@@ -2,8 +2,8 @@ package category
 
 type CategoryProduct struct {
     EntityID   uint `gorm:"column:entity_id;primaryKey;autoIncrement"`
-    CategoryID uint `gorm:"column:category_id;type:int unsigned;not null;default:0"`
-    ProductID  uint `gorm:"column:product_id;type:int unsigned;not null;default:0"`
+    CategoryID uint `gorm:"column:category_id;type:int unsigned;not null;default:0;uniqueIndex:idx_category_product"`
+    ProductID  uint `gorm:"column:product_id;type:int unsigned;not null;default:0;uniqueIndex:idx_category_product"`
     Position   int  `gorm:"column:position;not null;default:0"`
 }
 

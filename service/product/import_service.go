@@ -65,6 +65,9 @@ func knownColumns(attrMap map[string]attrMeta) map[string]bool {
 	for col := range priceColumns {
 		known[col] = true
 	}
+	for col := range categoryColumns {
+		known[col] = true
+	}
 	return known
 }
 
@@ -147,21 +150,24 @@ func ImportProducts(db *gorm.DB, r io.Reader, opts ImportOptions) (*ImportResult
 	stockData := collectStock(rows, colIndex, skuToID)
 	galleryData := collectGallery(rows, colIndex, skuToID)
 	priceData := collectPrice(rows, colIndex, skuToID)
+	categoryData := collectCategories(rows, colIndex, skuToID)
 
 	result.Warnings = append(result.Warnings, eavData.warnings...)
 	result.Warnings = append(result.Warnings, stockData.warnings...)
 	result.Warnings = append(result.Warnings, priceData.warnings...)
+	result.Warnings = append(result.Warnings, categoryData.warnings...)
 
 	// Flush all modules to DB in parallel
 	startDB := time.Now()
 	var wg sync.WaitGroup
-	errs := make(chan error, 4)
+	errs := make(chan error, 5)
 
-	wg.Add(4)
+	wg.Add(5)
 	go func() { defer wg.Done(); errs <- flushEAV(db, eavData, opts) }()
 	go func() { defer wg.Done(); errs <- flushStock(db, stockData, opts) }()
 	go func() { defer wg.Done(); errs <- flushGallery(db, galleryData, opts) }()
 	go func() { defer wg.Done(); errs <- flushPrice(db, priceData, opts) }()
+	go func() { defer wg.Done(); errs <- flushCategories(db, categoryData, opts) }()
 	wg.Wait()
 	close(errs)
 
@@ -179,6 +185,7 @@ func ImportProducts(db *gorm.DB, r io.Reader, opts ImportOptions) (*ImportResult
 	result.EAVCounts["stock"] = len(stockData.rows)
 	result.EAVCounts["gallery"] = len(galleryData.rows)
 	result.EAVCounts["price_index"] = len(priceData.rows)
+	result.EAVCounts["category_links"] = len(categoryData.assignments)
 
 	result.Updated = result.TotalRows - result.Skipped - result.Created
 	result.ProcessTime = time.Since(startProcess)
