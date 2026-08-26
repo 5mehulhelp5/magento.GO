@@ -83,6 +83,9 @@ func knownColumns(attrMap map[string]attrMeta) map[string]bool {
 	for col := range bundleColumns {
 		known[col] = true
 	}
+	for col := range configurableColumns {
+		known[col] = true
+	}
 	return known
 }
 
@@ -171,6 +174,7 @@ func ImportProducts(db *gorm.DB, r io.Reader, opts ImportOptions) (*ImportResult
 		}
 	}
 	skus = append(skus, bundleSelectionSKUs(rows, colIndex)...)
+	skus = append(skus, configurableChildSKUs(rows, colIndex)...)
 	skuToID := lookupSKUs(db, skus, opts.BatchSize)
 
 	startProcess := time.Now()
@@ -189,6 +193,7 @@ func ImportProducts(db *gorm.DB, r io.Reader, opts ImportOptions) (*ImportResult
 	customOptionsData := collectCustomOptions(rows, colIndex, skuToID)
 	downloadableData := collectDownloadable(rows, colIndex, skuToID)
 	bundleData := collectBundleOptions(rows, colIndex, skuToID)
+	configurableData := collectConfigurable(rows, colIndex, skuToID, attrMap)
 
 	result.Warnings = append(result.Warnings, eavData.warnings...)
 	result.Warnings = append(result.Warnings, stockData.warnings...)
@@ -199,13 +204,14 @@ func ImportProducts(db *gorm.DB, r io.Reader, opts ImportOptions) (*ImportResult
 	result.Warnings = append(result.Warnings, customOptionsData.warnings...)
 	result.Warnings = append(result.Warnings, downloadableData.warnings...)
 	result.Warnings = append(result.Warnings, bundleData.warnings...)
+	result.Warnings = append(result.Warnings, configurableData.warnings...)
 
 	// Flush all modules to DB in parallel
 	startDB := time.Now()
 	var wg sync.WaitGroup
-	errs := make(chan error, 10)
+	errs := make(chan error, 11)
 
-	wg.Add(10)
+	wg.Add(11)
 	go func() { defer wg.Done(); errs <- flushEAV(db, eavData, opts) }()
 	go func() { defer wg.Done(); errs <- flushStock(db, stockData, opts) }()
 	go func() { defer wg.Done(); errs <- flushGallery(db, galleryData, opts) }()
@@ -216,6 +222,7 @@ func ImportProducts(db *gorm.DB, r io.Reader, opts ImportOptions) (*ImportResult
 	go func() { defer wg.Done(); errs <- flushCustomOptions(db, customOptionsData, opts) }()
 	go func() { defer wg.Done(); errs <- flushDownloadable(db, downloadableData, opts) }()
 	go func() { defer wg.Done(); errs <- flushBundleOptions(db, bundleData, opts) }()
+	go func() { defer wg.Done(); errs <- flushConfigurable(db, configurableData, opts) }()
 	wg.Wait()
 	close(errs)
 
@@ -241,6 +248,8 @@ func ImportProducts(db *gorm.DB, r io.Reader, opts ImportOptions) (*ImportResult
 	result.EAVCounts["downloadable_samples"] = len(downloadableData.samples)
 	result.EAVCounts["bundle_options"] = bundleData.optionCount()
 	result.EAVCounts["bundle_selections"] = bundleData.selectionCount()
+	result.EAVCounts["configurable_attributes"] = len(configurableData.attributes)
+	result.EAVCounts["configurable_links"] = len(configurableData.links)
 
 	result.Updated = result.TotalRows - result.Skipped - result.Created
 	result.ProcessTime = time.Since(startProcess)
