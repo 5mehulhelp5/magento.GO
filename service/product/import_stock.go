@@ -83,26 +83,42 @@ func collectStock(rows [][]string, colIndex map[string]int, skuToID map[string]u
 		}
 		if ci, ok := colIndex["manage_stock"]; ok && ci < len(row) {
 			if v := strings.TrimSpace(row[ci]); v != "" {
-				iv, _ := strconv.ParseUint(v, 10, 16)
-				item.ManageStock = uint16(iv)
+				iv, err := strconv.ParseUint(v, 10, 16)
+				if err != nil {
+					d.warnings = append(d.warnings, fmt.Sprintf("sku=%s: invalid manage_stock %q", sku, v))
+				} else {
+					item.ManageStock = uint16(iv)
+				}
 			}
 		}
 		if ci, ok := colIndex["min_qty"]; ok && ci < len(row) {
 			if v := strings.TrimSpace(row[ci]); v != "" {
-				fv, _ := strconv.ParseFloat(v, 64)
-				item.MinQty = fv
+				fv, err := strconv.ParseFloat(v, 64)
+				if err != nil {
+					d.warnings = append(d.warnings, fmt.Sprintf("sku=%s: invalid min_qty %q", sku, v))
+				} else {
+					item.MinQty = fv
+				}
 			}
 		}
 		if ci, ok := colIndex["min_sale_qty"]; ok && ci < len(row) {
 			if v := strings.TrimSpace(row[ci]); v != "" {
-				fv, _ := strconv.ParseFloat(v, 64)
-				item.MinSaleQty = fv
+				fv, err := strconv.ParseFloat(v, 64)
+				if err != nil {
+					d.warnings = append(d.warnings, fmt.Sprintf("sku=%s: invalid min_sale_qty %q", sku, v))
+				} else {
+					item.MinSaleQty = fv
+				}
 			}
 		}
 		if ci, ok := colIndex["max_sale_qty"]; ok && ci < len(row) {
 			if v := strings.TrimSpace(row[ci]); v != "" {
-				fv, _ := strconv.ParseFloat(v, 64)
-				item.MaxSaleQty = fv
+				fv, err := strconv.ParseFloat(v, 64)
+				if err != nil {
+					d.warnings = append(d.warnings, fmt.Sprintf("sku=%s: invalid max_sale_qty %q", sku, v))
+				} else {
+					item.MaxSaleQty = fv
+				}
 			}
 		}
 

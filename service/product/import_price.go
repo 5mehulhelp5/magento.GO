@@ -74,27 +74,43 @@ func collectPrice(rows [][]string, colIndex map[string]int, skuToID map[string]u
 		}
 		if ci, ok := colIndex["final_price"]; ok && ci < len(row) {
 			if v := strings.TrimSpace(row[ci]); v != "" {
-				fv, _ := strconv.ParseFloat(v, 64)
-				item.FinalPrice = fv
-				populated = true
+				fv, err := strconv.ParseFloat(v, 64)
+				if err != nil {
+					d.warnings = append(d.warnings, fmt.Sprintf("sku=%s: invalid final_price %q", sku, v))
+				} else {
+					item.FinalPrice = fv
+					populated = true
+				}
 			}
 		}
 		if ci, ok := colIndex["min_price"]; ok && ci < len(row) {
 			if v := strings.TrimSpace(row[ci]); v != "" {
-				fv, _ := strconv.ParseFloat(v, 64)
-				item.MinPrice = fv
+				fv, err := strconv.ParseFloat(v, 64)
+				if err != nil {
+					d.warnings = append(d.warnings, fmt.Sprintf("sku=%s: invalid min_price %q", sku, v))
+				} else {
+					item.MinPrice = fv
+				}
 			}
 		}
 		if ci, ok := colIndex["max_price"]; ok && ci < len(row) {
 			if v := strings.TrimSpace(row[ci]); v != "" {
-				fv, _ := strconv.ParseFloat(v, 64)
-				item.MaxPrice = fv
+				fv, err := strconv.ParseFloat(v, 64)
+				if err != nil {
+					d.warnings = append(d.warnings, fmt.Sprintf("sku=%s: invalid max_price %q", sku, v))
+				} else {
+					item.MaxPrice = fv
+				}
 			}
 		}
 		if ci, ok := colIndex["tier_price"]; ok && ci < len(row) {
 			if v := strings.TrimSpace(row[ci]); v != "" {
-				fv, _ := strconv.ParseFloat(v, 64)
-				item.TierPrice = fv
+				fv, err := strconv.ParseFloat(v, 64)
+				if err != nil {
+					d.warnings = append(d.warnings, fmt.Sprintf("sku=%s: invalid tier_price %q", sku, v))
+				} else {
+					item.TierPrice = fv
+				}
 			}
 		}
 

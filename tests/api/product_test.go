@@ -128,15 +128,19 @@ func TestProductAPI_CreateAndListAndGetByID_DataCheck(t *testing.T) {
 		t.Fatalf("products = %v, want len 1", listResp["products"])
 	}
 	prod := products[0].(map[string]interface{})
-	if sku, _ := prod["SKU"].(string); sku != "DATA-CHECK-SKU" {
-		t.Errorf("products[0].SKU = %v, want DATA-CHECK-SKU", prod["SKU"])
+	if sku, _ := prod["sku"].(string); sku != "DATA-CHECK-SKU" {
+		t.Errorf("products[0].sku = %v, want DATA-CHECK-SKU", prod["sku"])
 	}
-	if typeID, _ := prod["TypeID"].(string); typeID != "simple" {
-		t.Errorf("products[0].TypeID = %v, want simple", prod["TypeID"])
+	if typeID, _ := prod["type_id"].(string); typeID != "simple" {
+		t.Errorf("products[0].type_id = %v, want simple", prod["type_id"])
 	}
 
 	// Get by ID and check data
-	entityID := int(prod["EntityID"].(float64))
+	entityIDFloat, ok := prod["entity_id"].(float64)
+	if !ok {
+		t.Fatalf("products[0].entity_id = %v, want a number", prod["entity_id"])
+	}
+	entityID := int(entityIDFloat)
 	getReq := httptest.NewRequest(http.MethodGet, "/api/products/"+strconv.Itoa(entityID), nil)
 	getRec := httptest.NewRecorder()
 	e.ServeHTTP(getRec, getReq)
@@ -148,7 +152,7 @@ func TestProductAPI_CreateAndListAndGetByID_DataCheck(t *testing.T) {
 		t.Fatalf("decode: %v", err)
 	}
 	gotProd := getResp["product"].(map[string]interface{})
-	if sku, _ := gotProd["SKU"].(string); sku != "DATA-CHECK-SKU" {
-		t.Errorf("product.SKU = %v, want DATA-CHECK-SKU", gotProd["SKU"])
+	if sku, _ := gotProd["sku"].(string); sku != "DATA-CHECK-SKU" {
+		t.Errorf("product.sku = %v, want DATA-CHECK-SKU", gotProd["sku"])
 	}
 }

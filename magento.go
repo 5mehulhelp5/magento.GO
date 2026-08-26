@@ -7,14 +7,12 @@ import (
 	"fmt"
 	"html/template"
 	"log"
-	"math/rand"
 	"net/http"
 	"os"
 	"strconv"
 	"strings"
 	"time"
 
-	"github.com/common-nighthawk/go-figure"
 	"github.com/labstack/echo/v4"
 	"github.com/labstack/echo/v4/middleware"
 	"gorm.io/gorm"
@@ -136,7 +134,7 @@ func main() {
 				msWithPrecision := float64(duration.Microseconds()) / 1000.0 // Convert to ms with decimals
 				
 				w.Header().Set("X-Page-Generation-Time-ms", fmt.Sprintf("%.3f", msWithPrecision))
-				w.Header().Set("X-Page-Generation-Time-μs", strconv.FormatInt(duration.Microseconds(), 10))
+				w.Header().Set("X-Page-Generation-Time-Micros", strconv.FormatInt(duration.Microseconds(), 10))
 				w.Header().Set("X-Page-Generation-Time", duration.String())
 				w.Header().Set("Server-Timing", fmt.Sprintf("app;dur=%.3f;desc=\"Magento.GO Response Time\"", msWithPrecision))
 				w.headerWritten = true
@@ -162,7 +160,7 @@ func main() {
 	e.Renderer = t
 
 	for _, tmpl := range t.Templates.Templates() {
-		log.Println("Loaded template: %s", tmpl.Name())
+		log.Printf("Loaded template: %s", tmpl.Name())
 	}
 
 	apiGroup := e.Group("/api")
