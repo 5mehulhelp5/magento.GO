@@ -1,0 +1,73 @@
+# Self-contained stack for running GoGento independently, with no external
+# network or existing Magento install required. Seeds a minimal sample
+# dataset via cmd/seed so integration tests have something to run against.
+#
+# Usage:
+#   docker compose -f docker-compose.standalone.yml up -d mysql
+#   docker compose -f docker-compose.standalone.yml run --rm seed
+#   docker compose -f docker-compose.standalone.yml run --rm test
+
+services:
+  mysql:
+    image: mysql:8.0
+    environment:
+      MYSQL_DATABASE: magento
+      MYSQL_USER: magento
+      MYSQL_PASSWORD: magento
+      MYSQL_ROOT_PASSWORD: root
+    ports:
+      - "3309:3306"
+    volumes:
+      - gogento_standalone_mysql:/var/lib/mysql
+    security_opt:
+      - seccomp:unconfined
+    ulimits:
+      nproc:
+        soft: 8192
+        hard: 8192
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-u", "root", "-proot"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+  seed:
+    build:
+      context: .
+      dockerfile: Dockerfile.test
+    depends_on:
+      mysql:
+        condition: service_healthy
+    environment:
+      MYSQL_HOST: mysql
+      MYSQL_PORT: "3306"
+      MYSQL_USER: magento
+      MYSQL_PASS: magento
+      MYSQL_DB: magento
+    volumes:
+      - .:/app
+    working_dir: /app
+    command: go run ./cmd/seed
+
+  test:
+    build:
+      context: .
+      dockerfile: Dockerfile.test
+    depends_on:
+      mysql:
+        condition: service_healthy
+    environment:
+      MYSQL_HOST: mysql
+      MYSQL_PORT: "3306"
+      MYSQL_USER: magento
+      MYSQL_PASS: magento
+      MYSQL_DB: magento
+    volumes:
+      - .:/app
+    working_dir: /app
+    command: >
+      sh -c "go test ./cmd/... ./api/... ./cron/... ./core/cache/... ./graphql/registry/...
+      ./tests/api/... ./tests/graphql/... ./tests/model/... ./tests/service/... ./tests/integration/... -v"
+
+volumes:
+  gogento_standalone_mysql:
