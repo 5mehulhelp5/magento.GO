@@ -13,9 +13,14 @@ var galleryColumns = map[string]bool{
 	"media_gallery": true,
 }
 
-// galleryData holds collected gallery rows ready to flush.
+// galleryData holds collected gallery rows ready to flush. entityIDs is
+// parallel to rows (same index = same gallery pool row's owning product) --
+// needed because the pool row (rows[i]) has no entity_id column of its own;
+// the link is only known once flushGallery inserts it and gets back a
+// value_id to pair with entityIDs[i].
 type galleryData struct {
-	rows []productEntity.ProductMediaGallery
+	rows      []productEntity.ProductMediaGallery
+	entityIDs []uint
 }
 
 // collectGallery parses CSV rows and buffers media gallery entries.
@@ -44,7 +49,8 @@ func collectGallery(rows [][]string, colIndex map[string]int, skuToID map[string
 		if sku == "" {
 			continue
 		}
-		if _, ok := skuToID[sku]; !ok {
+		entityID, ok := skuToID[sku]
+		if !ok {
 			continue
 		}
 
@@ -75,18 +81,34 @@ func collectGallery(rows [][]string, colIndex map[string]int, skuToID map[string
 					MediaType:   "image",
 					Disabled:    0,
 				})
+				d.entityIDs = append(d.entityIDs, entityID)
 			}
 		}
 	}
 	return d
 }
 
-// flushGallery writes buffered gallery rows to DB.
+// flushGallery writes buffered gallery rows to DB, then links each one to
+// its owning product via catalog_product_entity_media_gallery_value_to_entity
+// -- CreateInBatches backfills each row's auto-increment ValueID into d.rows
+// in place, so that ID is available immediately afterward to pair with
+// entityIDs[i] for the link rows.
 func flushGallery(db *gorm.DB, d *galleryData, opts ImportOptions) error {
 	if len(d.rows) == 0 {
 		return nil
 	}
 	return db.Transaction(func(tx *gorm.DB) error {
-		return tx.CreateInBatches(d.rows, opts.BatchSize).Error
+		if err := tx.CreateInBatches(d.rows, opts.BatchSize).Error; err != nil {
+			return err
+		}
+
+		links := make([]productEntity.ProductMediaGalleryValueToEntity, len(d.rows))
+		for i, row := range d.rows {
+			links[i] = productEntity.ProductMediaGalleryValueToEntity{
+				ValueID:  row.ValueID,
+				EntityID: d.entityIDs[i],
+			}
+		}
+		return tx.CreateInBatches(links, opts.BatchSize).Error
 	})
 }

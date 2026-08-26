@@ -58,6 +58,7 @@ func importDB(t *testing.T) *gorm.DB {
 		&productEntity.ProductDatetime{},
 		&productEntity.StockItem{},
 		&productEntity.ProductMediaGallery{},
+		&productEntity.ProductMediaGalleryValueToEntity{},
 		&productEntity.ProductIndexPrice{},
 		&entity.EavAttribute{},
 		&categoryEntity.Category{},
@@ -694,6 +695,50 @@ func TestImport_GalleryDedup(t *testing.T) {
 	}
 	if res.EAVCounts["gallery"] != 1 {
 		t.Errorf("gallery count = %d, want 1 (deduped)", res.EAVCounts["gallery"])
+	}
+}
+
+func TestImport_Gallery_LinksEachImageToItsOwningProduct(t *testing.T) {
+	db := importDB(t)
+	seedAttributes(t, db)
+
+	csv := "sku,image\nGAL-A,/m/y/a1.jpg|/m/y/a2.jpg\nGAL-B,/m/y/b1.jpg\n"
+	res, err := productService.ImportProducts(db, strings.NewReader(csv), productService.ImportOptions{})
+	if err != nil {
+		t.Fatalf("ImportProducts: %v", err)
+	}
+	if res.EAVCounts["gallery"] != 3 {
+		t.Fatalf("gallery count = %d, want 3", res.EAVCounts["gallery"])
+	}
+
+	var aID, bID uint
+	db.Model(&productEntity.Product{}).Where("sku = ?", "GAL-A").Pluck("entity_id", &aID)
+	db.Model(&productEntity.Product{}).Where("sku = ?", "GAL-B").Pluck("entity_id", &bID)
+
+	var links []productEntity.ProductMediaGalleryValueToEntity
+	db.Find(&links)
+	if len(links) != 3 {
+		t.Fatalf("value_to_entity link rows = %d, want 3 (one per gallery row)", len(links))
+	}
+
+	byEntity := map[uint]int{}
+	for _, l := range links {
+		byEntity[l.EntityID]++
+		// Every link must point at a value_id that actually exists in the
+		// gallery pool -- catches an unset (zero) ValueID, which would mean
+		// CreateInBatches never backfilled the auto-increment ID before the
+		// link rows were built.
+		var count int64
+		db.Model(&productEntity.ProductMediaGallery{}).Where("value_id = ?", l.ValueID).Count(&count)
+		if count != 1 {
+			t.Errorf("link value_id=%d does not match any gallery pool row", l.ValueID)
+		}
+	}
+	if byEntity[aID] != 2 {
+		t.Errorf("GAL-A has %d linked images, want 2", byEntity[aID])
+	}
+	if byEntity[bID] != 1 {
+		t.Errorf("GAL-B has %d linked images, want 1", byEntity[bID])
 	}
 }
 
