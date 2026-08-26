@@ -64,6 +64,7 @@ func importDB(t *testing.T) *gorm.DB {
 		&categoryEntity.CategoryProduct{},
 		&categoryEntity.CategoryVarchar{},
 		&priceEntity.TierPrice{},
+		&productEntity.ProductLink{},
 	); err != nil {
 		t.Fatalf("migrate: %v", err)
 	}
@@ -81,6 +82,7 @@ func importDB(t *testing.T) *gorm.DB {
 	db.Exec("CREATE UNIQUE INDEX IF NOT EXISTS idx_price_unq ON catalog_product_index_price (entity_id, customer_group_id, website_id)")
 	db.Exec("CREATE UNIQUE INDEX IF NOT EXISTS idx_category_product_unq ON catalog_category_product (category_id, product_id)")
 	db.Exec("CREATE UNIQUE INDEX IF NOT EXISTS idx_tier_price_unq ON catalog_product_entity_tier_price (entity_id, all_groups, customer_group_id, qty, website_id)")
+	db.Exec("CREATE UNIQUE INDEX IF NOT EXISTS idx_product_link_unq ON catalog_product_link (product_id, linked_product_id, link_type_id)")
 	return db
 }
 

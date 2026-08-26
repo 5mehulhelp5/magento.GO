@@ -71,6 +71,9 @@ func knownColumns(attrMap map[string]attrMeta) map[string]bool {
 	for col := range tierPriceColumns {
 		known[col] = true
 	}
+	for col := range productLinkColumns {
+		known[col] = true
+	}
 	return known
 }
 
@@ -134,11 +137,28 @@ func ImportProducts(db *gorm.DB, r io.Reader, opts ImportOptions) (*ImportResult
 	}
 	result.TotalRows = len(rows)
 
-	// Batch lookup existing SKUs
+	// Batch lookup existing SKUs. This also resolves any SKU referenced by
+	// a related/upsell/crosssell/grouped column (see linkSKUColumns) even
+	// though those SKUs won't be created if missing -- a link column may
+	// point at a product that already exists but isn't itself part of
+	// this CSV's primary "sku" column.
 	skus := make([]string, 0, len(rows))
 	for _, row := range rows {
 		if skuCol < len(row) && row[skuCol] != "" {
 			skus = append(skus, row[skuCol])
+		}
+	}
+	for _, col := range linkSKUColumns(colIndex) {
+		ci := colIndex[col]
+		for _, row := range rows {
+			if ci >= len(row) {
+				continue
+			}
+			for _, linkedSKU := range strings.Split(row[ci], ",") {
+				if linkedSKU = strings.TrimSpace(linkedSKU); linkedSKU != "" {
+					skus = append(skus, linkedSKU)
+				}
+			}
 		}
 	}
 	skuToID := lookupSKUs(db, skus, opts.BatchSize)
@@ -155,25 +175,28 @@ func ImportProducts(db *gorm.DB, r io.Reader, opts ImportOptions) (*ImportResult
 	priceData := collectPrice(rows, colIndex, skuToID)
 	categoryData := collectCategories(rows, colIndex, skuToID)
 	tierPriceData := collectTierPrices(rows, colIndex, skuToID)
+	linkData := collectProductLinks(rows, colIndex, skuToID)
 
 	result.Warnings = append(result.Warnings, eavData.warnings...)
 	result.Warnings = append(result.Warnings, stockData.warnings...)
 	result.Warnings = append(result.Warnings, priceData.warnings...)
 	result.Warnings = append(result.Warnings, categoryData.warnings...)
 	result.Warnings = append(result.Warnings, tierPriceData.warnings...)
+	result.Warnings = append(result.Warnings, linkData.warnings...)
 
 	// Flush all modules to DB in parallel
 	startDB := time.Now()
 	var wg sync.WaitGroup
-	errs := make(chan error, 6)
+	errs := make(chan error, 7)
 
-	wg.Add(6)
+	wg.Add(7)
 	go func() { defer wg.Done(); errs <- flushEAV(db, eavData, opts) }()
 	go func() { defer wg.Done(); errs <- flushStock(db, stockData, opts) }()
 	go func() { defer wg.Done(); errs <- flushGallery(db, galleryData, opts) }()
 	go func() { defer wg.Done(); errs <- flushPrice(db, priceData, opts) }()
 	go func() { defer wg.Done(); errs <- flushCategories(db, categoryData, opts) }()
 	go func() { defer wg.Done(); errs <- flushTierPrices(db, tierPriceData, opts) }()
+	go func() { defer wg.Done(); errs <- flushProductLinks(db, linkData, opts) }()
 	wg.Wait()
 	close(errs)
 
@@ -193,6 +216,7 @@ func ImportProducts(db *gorm.DB, r io.Reader, opts ImportOptions) (*ImportResult
 	result.EAVCounts["price_index"] = len(priceData.rows)
 	result.EAVCounts["category_links"] = len(categoryData.assignments)
 	result.EAVCounts["tier_prices"] = len(tierPriceData.rows)
+	result.EAVCounts["product_links"] = len(linkData.rows)
 
 	result.Updated = result.TotalRows - result.Skipped - result.Created
 	result.ProcessTime = time.Since(startProcess)
