@@ -274,29 +274,42 @@ func flushBundleOptions(db *gorm.DB, d *bundleData, opts ImportOptions) error {
 			return err
 		}
 
+		// Flatten every option across every product into one slice, same
+		// batched-insert-then-backfilled-ID approach as flushCustomOptions:
+		// one multi-row INSERT instead of one per option.
+		optionRows := make([]productEntity.ProductBundleOption, 0, d.optionCount())
+		optionSelections := make([][]bundleSelection, 0, d.optionCount())
 		for _, p := range d.products {
 			for pos, opt := range p.Options {
-				row := productEntity.ProductBundleOption{
+				optionRows = append(optionRows, productEntity.ProductBundleOption{
 					ParentID: p.ProductID, Required: opt.Required, Position: pos,
 					Type: opt.Type, Title: opt.Title,
-				}
-				if err := tx.Create(&row).Error; err != nil {
-					return err
-				}
+				})
+				optionSelections = append(optionSelections, opt.Selections)
+			}
+		}
+		if len(optionRows) == 0 {
+			return nil
+		}
+		if err := tx.CreateInBatches(&optionRows, opts.BatchSize).Error; err != nil {
+			return err
+		}
 
-				selections := make([]productEntity.ProductBundleSelection, len(opt.Selections))
-				for i, sel := range opt.Selections {
-					selections[i] = productEntity.ProductBundleSelection{
-						OptionID: row.OptionID, ParentProductID: p.ProductID,
-						ProductID: sel.ProductID, Position: i,
-						IsDefault: sel.IsDefault, SelectionQty: sel.Qty,
-						SelectionPriceValue: sel.PriceValue, SelectionPriceType: sel.PriceType,
-						SelectionCanChangeQty: sel.CanChangeQty,
-					}
-				}
-				if err := tx.CreateInBatches(selections, opts.BatchSize).Error; err != nil {
-					return err
-				}
+		var selectionRows []productEntity.ProductBundleSelection
+		for i, row := range optionRows {
+			for pos, sel := range optionSelections[i] {
+				selectionRows = append(selectionRows, productEntity.ProductBundleSelection{
+					OptionID: row.OptionID, ParentProductID: row.ParentID,
+					ProductID: sel.ProductID, Position: pos,
+					IsDefault: sel.IsDefault, SelectionQty: sel.Qty,
+					SelectionPriceValue: sel.PriceValue, SelectionPriceType: sel.PriceType,
+					SelectionCanChangeQty: sel.CanChangeQty,
+				})
+			}
+		}
+		if len(selectionRows) > 0 {
+			if err := tx.CreateInBatches(&selectionRows, opts.BatchSize).Error; err != nil {
+				return err
 			}
 		}
 		return nil

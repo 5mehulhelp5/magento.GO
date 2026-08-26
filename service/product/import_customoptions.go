@@ -250,29 +250,43 @@ func flushCustomOptions(db *gorm.DB, d *customOptionsData, opts ImportOptions) e
 			return err
 		}
 
+		// Flatten every option across every product into one slice so it
+		// can be bulk-inserted in a single batched multi-row INSERT
+		// instead of one INSERT per option -- GORM backfills each
+		// element's OptionID from LAST_INSERT_ID() plus its offset in the
+		// batch, the same consecutive-auto-increment trick
+		// insertNewEntities already relies on for catalog_product_entity.
+		optionRows := make([]productEntity.ProductOption, 0, d.customOptionCount())
+		optionValues := make([][]customOptionValue, 0, d.customOptionCount())
 		for _, p := range d.products {
 			for _, opt := range p.Options {
-				row := productEntity.ProductOption{
+				optionRows = append(optionRows, productEntity.ProductOption{
 					ProductID: p.ProductID, Type: opt.Type, Title: opt.Title,
 					IsRequire: opt.IsRequire, Price: opt.Price, PriceType: opt.PriceType,
 					SKU: opt.SKU, MaxCharacters: opt.MaxCharacters, SortOrder: opt.SortOrder,
-				}
-				if err := tx.Create(&row).Error; err != nil {
-					return err
-				}
-				if len(opt.Values) == 0 {
-					continue
-				}
-				values := make([]productEntity.ProductOptionTypeValue, len(opt.Values))
-				for i, v := range opt.Values {
-					values[i] = productEntity.ProductOptionTypeValue{
-						OptionID: row.OptionID, Title: v.Title, Price: v.Price,
-						PriceType: v.PriceType, SKU: v.SKU, SortOrder: v.SortOrder,
-					}
-				}
-				if err := tx.CreateInBatches(values, opts.BatchSize).Error; err != nil {
-					return err
-				}
+				})
+				optionValues = append(optionValues, opt.Values)
+			}
+		}
+		if len(optionRows) == 0 {
+			return nil
+		}
+		if err := tx.CreateInBatches(&optionRows, opts.BatchSize).Error; err != nil {
+			return err
+		}
+
+		var valueRows []productEntity.ProductOptionTypeValue
+		for i, row := range optionRows {
+			for _, v := range optionValues[i] {
+				valueRows = append(valueRows, productEntity.ProductOptionTypeValue{
+					OptionID: row.OptionID, Title: v.Title, Price: v.Price,
+					PriceType: v.PriceType, SKU: v.SKU, SortOrder: v.SortOrder,
+				})
+			}
+		}
+		if len(valueRows) > 0 {
+			if err := tx.CreateInBatches(&valueRows, opts.BatchSize).Error; err != nil {
+				return err
 			}
 		}
 		return nil
