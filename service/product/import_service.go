@@ -74,6 +74,9 @@ func knownColumns(attrMap map[string]attrMeta) map[string]bool {
 	for col := range productLinkColumns {
 		known[col] = true
 	}
+	for col := range customOptionColumns {
+		known[col] = true
+	}
 	return known
 }
 
@@ -176,6 +179,7 @@ func ImportProducts(db *gorm.DB, r io.Reader, opts ImportOptions) (*ImportResult
 	categoryData := collectCategories(rows, colIndex, skuToID)
 	tierPriceData := collectTierPrices(rows, colIndex, skuToID)
 	linkData := collectProductLinks(rows, colIndex, skuToID)
+	customOptionsData := collectCustomOptions(rows, colIndex, skuToID)
 
 	result.Warnings = append(result.Warnings, eavData.warnings...)
 	result.Warnings = append(result.Warnings, stockData.warnings...)
@@ -183,13 +187,14 @@ func ImportProducts(db *gorm.DB, r io.Reader, opts ImportOptions) (*ImportResult
 	result.Warnings = append(result.Warnings, categoryData.warnings...)
 	result.Warnings = append(result.Warnings, tierPriceData.warnings...)
 	result.Warnings = append(result.Warnings, linkData.warnings...)
+	result.Warnings = append(result.Warnings, customOptionsData.warnings...)
 
 	// Flush all modules to DB in parallel
 	startDB := time.Now()
 	var wg sync.WaitGroup
-	errs := make(chan error, 7)
+	errs := make(chan error, 8)
 
-	wg.Add(7)
+	wg.Add(8)
 	go func() { defer wg.Done(); errs <- flushEAV(db, eavData, opts) }()
 	go func() { defer wg.Done(); errs <- flushStock(db, stockData, opts) }()
 	go func() { defer wg.Done(); errs <- flushGallery(db, galleryData, opts) }()
@@ -197,6 +202,7 @@ func ImportProducts(db *gorm.DB, r io.Reader, opts ImportOptions) (*ImportResult
 	go func() { defer wg.Done(); errs <- flushCategories(db, categoryData, opts) }()
 	go func() { defer wg.Done(); errs <- flushTierPrices(db, tierPriceData, opts) }()
 	go func() { defer wg.Done(); errs <- flushProductLinks(db, linkData, opts) }()
+	go func() { defer wg.Done(); errs <- flushCustomOptions(db, customOptionsData, opts) }()
 	wg.Wait()
 	close(errs)
 
@@ -217,6 +223,7 @@ func ImportProducts(db *gorm.DB, r io.Reader, opts ImportOptions) (*ImportResult
 	result.EAVCounts["category_links"] = len(categoryData.assignments)
 	result.EAVCounts["tier_prices"] = len(tierPriceData.rows)
 	result.EAVCounts["product_links"] = len(linkData.rows)
+	result.EAVCounts["custom_options"] = customOptionsData.customOptionCount()
 
 	result.Updated = result.TotalRows - result.Skipped - result.Created
 	result.ProcessTime = time.Since(startProcess)

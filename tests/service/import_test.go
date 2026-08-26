@@ -66,6 +66,8 @@ func importDB(t *testing.T) *gorm.DB {
 		&categoryEntity.CategoryVarchar{},
 		&priceEntity.TierPrice{},
 		&productEntity.ProductLink{},
+		&productEntity.ProductOption{},
+		&productEntity.ProductOptionTypeValue{},
 	); err != nil {
 		t.Fatalf("migrate: %v", err)
 	}
