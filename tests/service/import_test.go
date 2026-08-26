@@ -28,10 +28,24 @@ func importDB(t *testing.T) *gorm.DB {
 	if err != nil {
 		t.Fatalf("open sqlite: %v", err)
 	}
-	// SQLite performance pragmas (mirrors MySQL's batched-write behavior)
+	// SQLite performance pragmas (mirrors MySQL's batched-write behavior).
 	db.Exec("PRAGMA journal_mode=WAL")
 	db.Exec("PRAGMA synchronous=OFF")
-	db.Exec("PRAGMA busy_timeout=5000")
+	db.Exec("PRAGMA busy_timeout=30000")
+
+	// Each flush now wraps all of its batches in one transaction (see
+	// flushEAVRaw/flushStock/flushPrice/flushGallery/flushCategories).
+	// Unlike MySQL/InnoDB's row-level locking, SQLite serializes all
+	// writers on one whole-database lock, and busy_timeout is a
+	// per-connection setting -- a new pool connection picked up by one of
+	// the import's concurrent goroutines wouldn't inherit the pragma set
+	// above on a different connection. Capping the pool at one connection
+	// makes Go's database/sql layer queue those goroutines instead,
+	// avoiding SQLITE_BUSY entirely; it only affects this SQLite test
+	// harness; production runs against MySQL with its own pool.
+	if sqlDB, err := db.DB(); err == nil {
+		sqlDB.SetMaxOpenConns(1)
+	}
 
 	if err := db.AutoMigrate(
 		&productEntity.Product{},
