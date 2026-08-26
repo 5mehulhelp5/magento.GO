@@ -70,6 +70,8 @@ func importDB(t *testing.T) *gorm.DB {
 		&productEntity.ProductOptionTypeValue{},
 		&productEntity.DownloadableLink{},
 		&productEntity.DownloadableSample{},
+		&productEntity.ProductBundleOption{},
+		&productEntity.ProductBundleSelection{},
 	); err != nil {
 		t.Fatalf("migrate: %v", err)
 	}
