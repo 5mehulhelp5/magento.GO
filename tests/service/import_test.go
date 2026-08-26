@@ -14,6 +14,7 @@ import (
 
 	entity "magento.GO/model/entity"
 	categoryEntity "magento.GO/model/entity/category"
+	priceEntity "magento.GO/model/entity/price"
 	productEntity "magento.GO/model/entity/product"
 	productService "magento.GO/service/product"
 )
@@ -62,6 +63,7 @@ func importDB(t *testing.T) *gorm.DB {
 		&categoryEntity.Category{},
 		&categoryEntity.CategoryProduct{},
 		&categoryEntity.CategoryVarchar{},
+		&priceEntity.TierPrice{},
 	); err != nil {
 		t.Fatalf("migrate: %v", err)
 	}
@@ -78,6 +80,7 @@ func importDB(t *testing.T) *gorm.DB {
 	db.Exec("CREATE UNIQUE INDEX IF NOT EXISTS idx_stock_unq ON cataloginventory_stock_item (product_id, stock_id)")
 	db.Exec("CREATE UNIQUE INDEX IF NOT EXISTS idx_price_unq ON catalog_product_index_price (entity_id, customer_group_id, website_id)")
 	db.Exec("CREATE UNIQUE INDEX IF NOT EXISTS idx_category_product_unq ON catalog_category_product (category_id, product_id)")
+	db.Exec("CREATE UNIQUE INDEX IF NOT EXISTS idx_tier_price_unq ON catalog_product_entity_tier_price (entity_id, all_groups, customer_group_id, qty, website_id)")
 	return db
 }
 
